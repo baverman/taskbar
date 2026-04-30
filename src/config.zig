@@ -90,7 +90,9 @@ pub const config = Config{
     },
     .widgets = &.{
         .{ .pager = .{} },
-        .{ .taskbar = .{ .max_item_width = 500, } },
+        .{ .taskbar = .{
+            .max_item_width = 500,
+        } },
         .{ .tray = .{} },
         .{ .clock = .{} },
     },
