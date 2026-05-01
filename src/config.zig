@@ -38,17 +38,23 @@ pub const Align = enum {
 pub const Pager = struct {
     style: StyleOverride = .{},
     width: Width = .min_content,
+    margin_left: i32 = 0,
+    margin_right: i32 = 0,
 };
 
 pub const Taskbar = struct {
     style: StyleOverride = .{},
     width: Width = .flex,
     max_item_width: ?i32 = null,
+    margin_left: i32 = 0,
+    margin_right: i32 = 0,
 };
 
 pub const Tray = struct {
     style: StyleOverride = .{},
     width: Width = .min_content,
+    margin_left: i32 = 0,
+    margin_right: i32 = 0,
     icon_size: ?i32 = null,
     item_gap: i32 = 2,
 };
@@ -56,6 +62,8 @@ pub const Tray = struct {
 pub const Clock = struct {
     style: StyleOverride = .{},
     width: Width = .{ .fixed = 70 },
+    margin_left: i32 = 0,
+    margin_right: i32 = 0,
     text_align: Align = .right,
     format: []const u8 = "%H:%M",
 };
@@ -69,14 +77,12 @@ pub const Widget = union(enum) {
 
 pub const Config = struct {
     height: i32,
-    gap: i32,
     style: Style,
     widgets: []const Widget,
 };
 
 pub const config = Config{
     .height = 29,
-    .gap = 8,
     .style = .{
         .font = .{
             .name = "InputUI Sans Compressed",
@@ -90,11 +96,16 @@ pub const config = Config{
         .text_offset = -1,
     },
     .widgets = &.{
-        .{ .pager = .{} },
+        .{ .pager = .{
+            .margin_right = 8,
+        } },
         .{ .taskbar = .{
             .max_item_width = 500,
+            .margin_right = 8,
         } },
-        .{ .tray = .{ .icon_size = 22, } },
+        .{ .tray = .{
+            .icon_size = 22,
+        } },
         .{ .clock = .{} },
     },
 };

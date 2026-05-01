@@ -239,7 +239,8 @@ pub const App = struct {
     fn relayout(app: *App) void {
         var fixed_width_total: i32 = 0;
         var flex_index: ?usize = null;
-        var visible_nonflex_count: i32 = 0;
+        var visible_order: std.ArrayList(usize) = .{};
+        defer visible_order.deinit(app.ctx.allocator);
 
         for (app.layout.items, 0..) |*item, idx| {
             const width_cfg = switch (item.config) {
@@ -260,31 +261,41 @@ pub const App = struct {
             item.rect.height = app.ctx.config.height;
             if (flex_index != idx) {
                 fixed_width_total += width;
-                if (width > 0) visible_nonflex_count += 1;
             }
+            if (width > 0) visible_order.append(app.ctx.allocator, idx) catch unreachable;
         }
 
         if (flex_index) |idx| {
-            const gaps_with_flex = if (visible_nonflex_count > 0) visible_nonflex_count * app.ctx.config.gap else 0;
-            const remaining = @max(0, app.ctx.panelWidth() - fixed_width_total - gaps_with_flex);
+            var spacing_total: i32 = 0;
+            if (visible_order.items.len > 1) {
+                for (visible_order.items[1..], 0..) |current_idx, prev_i| {
+                    const prev_idx = visible_order.items[prev_i];
+                    spacing_total += widgetMarginRight(app.layout.items[prev_idx].config);
+                    spacing_total += widgetMarginLeft(app.layout.items[current_idx].config);
+                }
+            }
+            const remaining = @max(0, app.ctx.panelWidth() - fixed_width_total - spacing_total);
             app.layout.items[idx].rect.width = remaining;
         }
 
         var x: i32 = 0;
-        var have_visible = false;
-        for (app.layout.items) |*item| {
+        var prev_visible_idx: ?usize = null;
+        for (app.layout.items, 0..) |*item, idx| {
             if (item.rect.width <= 0) {
                 item.rect.x = x;
                 item.rect.y = 0;
                 item.dirty = true;
                 continue;
             }
-            if (have_visible) x += app.ctx.config.gap;
+            if (prev_visible_idx) |prev_idx| {
+                x += widgetMarginRight(app.layout.items[prev_idx].config);
+                x += widgetMarginLeft(item.config);
+            }
             item.rect.x = x;
             item.rect.y = 0;
             item.dirty = true;
             x += item.rect.width;
-            have_visible = true;
+            prev_visible_idx = idx;
         }
         app.layout_dirty = false;
     }
@@ -294,4 +305,22 @@ fn nextClockTimeoutMs() c_int {
     const now: i64 = @intCast(c.time(null));
     const next_minute = ((@divFloor(now, 60) + 1) * 60);
     return @intCast(@max(0, next_minute - now) * 1000);
+}
+
+fn widgetMarginLeft(widget_cfg: cfg.Widget) i32 {
+    return switch (widget_cfg) {
+        .pager => |v| v.margin_left,
+        .taskbar => |v| v.margin_left,
+        .tray => |v| v.margin_left,
+        .clock => |v| v.margin_left,
+    };
+}
+
+fn widgetMarginRight(widget_cfg: cfg.Widget) i32 {
+    return switch (widget_cfg) {
+        .pager => |v| v.margin_right,
+        .taskbar => |v| v.margin_right,
+        .tray => |v| v.margin_right,
+        .clock => |v| v.margin_right,
+    };
 }
