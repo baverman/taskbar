@@ -15,8 +15,9 @@ pub fn build(b: *std.Build) void {
         .use_llvm = true,
     });
 
-    exe.linkSystemLibrary("Xft");
-    exe.linkSystemLibrary("X11");
+    exe.linkSystemLibrary2("pangocairo-1.0", .{ .use_pkg_config = .force });
+    exe.linkSystemLibrary2("cairo", .{ .use_pkg_config = .force });
+    exe.linkSystemLibrary2("X11", .{ .use_pkg_config = .force });
 
     b.installArtifact(exe);
 

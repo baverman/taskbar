@@ -6,8 +6,7 @@ const c = x11.c;
 pub const Clock = struct {
     config: cfg.Clock,
     style: common.ResolvedStyle,
-    font: *c.XftFont,
-    fallback_font: *c.XftFont,
+    font: *c.PangoFontDescription,
     text: [32]u8,
     len: usize,
     last_clock_minute: i64,
@@ -18,7 +17,6 @@ pub const Clock = struct {
             .config = config,
             .style = style,
             .font = try ctx.openFont(style.font),
-            .fallback_font = try ctx.openFont(.{ .name = "DejaVu Sans", .size = style.font.size }),
             .text = [_]u8{0} ** 32,
             .len = 0,
             .last_clock_minute = -1,
@@ -26,8 +24,8 @@ pub const Clock = struct {
     }
 
     pub fn deinit(self: *Clock, ctx: *const common.Context) void {
-        c.XftFontClose(ctx.gfx.display, self.font);
-        c.XftFontClose(ctx.gfx.display, self.fallback_font);
+        _ = ctx;
+        c.pango_font_description_free(self.font);
     }
 
     pub fn refresh(self: *Clock, ctx: *const common.Context) void {
@@ -49,14 +47,15 @@ pub const Clock = struct {
 
     pub fn draw(self: *Clock, ctx: *const common.Context, rect: common.Rect) void {
         const text = self.text[0..self.len];
-        const text_width = ctx.measureText(self.font, text);
-        const available = @max(0, rect.width - self.style.padding * 2);
-        const aligned_x = switch (self.config.text_align) {
-            .left => rect.x + self.style.padding,
-            .center => rect.x + self.style.padding + @divFloor(@max(0, available - text_width), 2),
-            .right => rect.x + rect.width - self.style.padding - text_width,
-        };
-        ctx.drawText(self.font, self.fallback_font, self.style.text, aligned_x, ctx.textBaseline(self.font) + self.style.text_offset, text);
+        ctx.drawText(
+            self.font,
+            self.style.text,
+            .{ .x = rect.x + self.style.padding, .y = rect.y, .width = @max(0, rect.width - self.style.padding * 2), .height = rect.height },
+            text,
+            self.config.text_align,
+            self.style.text_offset,
+            false,
+        );
     }
 
     pub fn handleEvent(self: *Clock, ctx: *const common.Context, event: *const c.XEvent) common.Update {

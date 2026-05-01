@@ -30,10 +30,9 @@ pub const Gfx = struct {
     screen_num: c_int,
     root: c.Window,
     window: c.Window,
-    gc: c.GC,
     visual: ?*c.Visual,
-    colormap: c.Colormap,
-    xft_draw: *c.XftDraw,
+    cairo_surface: *c.cairo_surface_t,
+    cairo: *c.cairo_t,
     atoms: x11.Atoms,
 };
 
@@ -46,63 +45,71 @@ pub const Context = struct {
         return c.XDisplayWidth(ctx.gfx.display, ctx.gfx.screen_num);
     }
 
-    pub fn openFont(ctx: *const Context, font: cfg.Font) !*c.XftFont {
+    pub fn openFont(ctx: *const Context, font: cfg.Font) !*c.PangoFontDescription {
+        _ = ctx;
         var buffer: [256]u8 = undefined;
-        const name = try std.fmt.bufPrint(&buffer, "{s}-{d}", .{ font.name, font.size });
-        return c.XftFontOpenName(ctx.gfx.display, ctx.gfx.screen_num, name.ptr) orelse return error.XftFontOpenFailed;
+        const name = try std.fmt.bufPrintZ(&buffer, "{s} {d}", .{ font.name, font.size });
+        return c.pango_font_description_from_string(name.ptr) orelse return error.PangoFontDescriptionFailed;
     }
 
     pub fn fillRect(ctx: *const Context, color: u32, rect: Rect) void {
-        _ = c.XSetForeground(ctx.gfx.display, ctx.gfx.gc, color);
-        _ = c.XFillRectangle(ctx.gfx.display, ctx.gfx.window, ctx.gfx.gc, @intCast(rect.x), @intCast(rect.y), @intCast(rect.width), @intCast(rect.height));
+        setSourceColor(ctx.gfx.cairo, color);
+        c.cairo_rectangle(ctx.gfx.cairo, @floatFromInt(rect.x), @floatFromInt(rect.y), @floatFromInt(rect.width), @floatFromInt(rect.height));
+        _ = c.cairo_fill(ctx.gfx.cairo);
     }
 
-    pub fn textBaseline(ctx: *const Context, font: *c.XftFont) i32 {
-        const text_height = font.ascent + font.descent;
-        return @divFloor(ctx.config.height - text_height, 2) + font.ascent;
-    }
-
-    pub fn measureText(ctx: *const Context, font: *c.XftFont, text: []const u8) i32 {
+    pub fn measureText(ctx: *const Context, font: *c.PangoFontDescription, text: []const u8) i32 {
         if (text.len == 0) return 0;
-        var extents: c.XGlyphInfo = undefined;
-        c.XftTextExtentsUtf8(ctx.gfx.display, font, text.ptr, @intCast(text.len), &extents);
-        return extents.xOff;
+        const layout = c.pango_cairo_create_layout(ctx.gfx.cairo) orelse return 0;
+        defer c.g_object_unref(layout);
+        c.pango_layout_set_font_description(layout, font);
+        c.pango_layout_set_text(layout, text.ptr, @intCast(text.len));
+        var width: c_int = 0;
+        var height: c_int = 0;
+        c.pango_layout_get_pixel_size(layout, &width, &height);
+        return width;
     }
 
-    pub fn textItemWidth(ctx: *const Context, font: *c.XftFont, text: []const u8, padding: i32) i32 {
+    pub fn textItemWidth(ctx: *const Context, font: *c.PangoFontDescription, text: []const u8, padding: i32) i32 {
         return ctx.measureText(font, text) + padding * 2;
     }
 
-    pub fn fitText(ctx: *const Context, font: *c.XftFont, text: []const u8, max_width: i32) []const u8 {
-        if (ctx.measureText(font, text) <= max_width) return text;
-        var end = text.len;
-        while (end > 0) : (end -= 1) {
-            const candidate = text[0..end];
-            if (ctx.measureText(font, candidate) <= max_width) return candidate;
-        }
-        return "";
-    }
+    pub fn drawText(
+        ctx: *const Context,
+        font: *c.PangoFontDescription,
+        color_rgb: u32,
+        rect: Rect,
+        text: []const u8,
+        text_align: cfg.Align,
+        text_offset: i32,
+        ellipsize: bool,
+    ) void {
+        if (text.len == 0 or rect.width <= 0 or rect.height <= 0) return;
+        const layout = c.pango_cairo_create_layout(ctx.gfx.cairo) orelse return;
+        defer c.g_object_unref(layout);
 
-    pub fn drawText(ctx: *const Context, font: *c.XftFont, fallback_font: *c.XftFont, color_rgb: u32, x: i32, baseline_y: i32, text: []const u8) void {
-        if (text.len == 0) return;
-        var color: c.XftColor = undefined;
-        defer c.XftColorFree(ctx.gfx.display, ctx.gfx.visual, ctx.gfx.colormap, &color);
-        var value = c.XRenderColor{
-            .red = @intCast(((color_rgb >> 16) & 0xff) * 257),
-            .green = @intCast(((color_rgb >> 8) & 0xff) * 257),
-            .blue = @intCast((color_rgb & 0xff) * 257),
-            .alpha = 0xffff,
-        };
-        if (c.XftColorAllocValue(ctx.gfx.display, ctx.gfx.visual, ctx.gfx.colormap, &value, &color) == 0) return;
+        c.pango_layout_set_font_description(layout, font);
+        c.pango_layout_set_text(layout, text.ptr, @intCast(text.len));
+        c.pango_layout_set_width(layout, rect.width * c.PANGO_SCALE);
+        c.pango_layout_set_alignment(layout, switch (text_align) {
+            .left => c.PANGO_ALIGN_LEFT,
+            .center => c.PANGO_ALIGN_CENTER,
+            .right => c.PANGO_ALIGN_RIGHT,
+        });
+        c.pango_layout_set_ellipsize(layout, if (ellipsize) c.PANGO_ELLIPSIZE_END else c.PANGO_ELLIPSIZE_NONE);
 
-        var draw_x = x;
-        var utf8 = std.unicode.Utf8View.init(text) catch return;
-        var iter = utf8.iterator();
-        while (iter.nextCodepointSlice()) |slice| {
-            const draw_font = if (c.XftCharExists(ctx.gfx.display, font, tryDecodeCodepoint(slice)) != 0) font else fallback_font;
-            c.XftDrawStringUtf8(ctx.gfx.xft_draw, &color, draw_font, draw_x, baseline_y, slice.ptr, @intCast(slice.len));
-            draw_x += ctx.measureText(draw_font, slice);
-        }
+        var text_width: c_int = 0;
+        var text_height: c_int = 0;
+        c.pango_layout_get_pixel_size(layout, &text_width, &text_height);
+        const y = rect.y + @divFloor(@max(0, rect.height - text_height), 2) + text_offset;
+
+        _ = c.cairo_save(ctx.gfx.cairo);
+        c.cairo_rectangle(ctx.gfx.cairo, @floatFromInt(rect.x), @floatFromInt(rect.y), @floatFromInt(rect.width), @floatFromInt(rect.height));
+        c.cairo_clip(ctx.gfx.cairo);
+        setSourceColor(ctx.gfx.cairo, color_rgb);
+        c.cairo_move_to(ctx.gfx.cairo, @floatFromInt(rect.x), @floatFromInt(y));
+        c.pango_cairo_show_layout(ctx.gfx.cairo, layout);
+        _ = c.cairo_restore(ctx.gfx.cairo);
     }
 
     pub fn readWindowTitle(ctx: *const Context, window: c.Window) !?[]u8 {
@@ -247,6 +254,11 @@ pub fn resolveStyle(base: cfg.Style, override: cfg.StyleOverride) ResolvedStyle 
     };
 }
 
-fn tryDecodeCodepoint(slice: []const u8) c.FcChar32 {
-    return @intCast(std.unicode.utf8Decode(slice) catch 0xfffd);
+fn setSourceColor(cr: *c.cairo_t, color_rgb: u32) void {
+    c.cairo_set_source_rgb(
+        cr,
+        @as(f64, @floatFromInt((color_rgb >> 16) & 0xff)) / 255.0,
+        @as(f64, @floatFromInt((color_rgb >> 8) & 0xff)) / 255.0,
+        @as(f64, @floatFromInt(color_rgb & 0xff)) / 255.0,
+    );
 }

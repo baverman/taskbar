@@ -54,7 +54,7 @@ pub const Tray = struct {
 
 pub const Clock = struct {
     style: StyleOverride = .{},
-    width: Width = .{ .fixed = 64 },
+    width: Width = .{ .fixed = 70 },
     text_align: Align = .right,
     format: []const u8 = "%H:%M",
 };

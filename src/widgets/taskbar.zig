@@ -13,8 +13,7 @@ pub const WindowEntry = struct {
 pub const Taskbar = struct {
     config: cfg.Taskbar,
     style: common.ResolvedStyle,
-    font: *c.XftFont,
-    fallback_font: *c.XftFont,
+    font: *c.PangoFontDescription,
     windows: std.ArrayList(WindowEntry),
     active_window: c.Window,
 
@@ -24,7 +23,6 @@ pub const Taskbar = struct {
             .config = config,
             .style = style,
             .font = try ctx.openFont(style.font),
-            .fallback_font = try ctx.openFont(.{ .name = "DejaVu Sans", .size = style.font.size }),
             .windows = .{},
             .active_window = 0,
         };
@@ -33,8 +31,7 @@ pub const Taskbar = struct {
     pub fn deinit(self: *Taskbar, ctx: *const common.Context) void {
         for (self.windows.items) |window| ctx.allocator.free(window.title);
         self.windows.deinit(ctx.allocator);
-        c.XftFontClose(ctx.gfx.display, self.font);
-        c.XftFontClose(ctx.gfx.display, self.fallback_font);
+        c.pango_font_description_free(self.font);
     }
 
     pub fn refresh(self: *Taskbar, ctx: *const common.Context) !void {
@@ -99,9 +96,15 @@ pub const Taskbar = struct {
             if (window.window == self.active_window) {
                 ctx.fillRect(self.style.active_bg, .{ .x = x, .y = rect.y, .width = item_width, .height = rect.height });
             }
-            const text_width = @max(0, item_width - self.style.padding * 2);
-            const clipped = ctx.fitText(self.font, window.title, text_width);
-            ctx.drawText(self.font, self.fallback_font, if (window.window == self.active_window) self.style.active_text else self.style.text, x + self.style.padding, ctx.textBaseline(self.font) + self.style.text_offset, clipped);
+            ctx.drawText(
+                self.font,
+                if (window.window == self.active_window) self.style.active_text else self.style.text,
+                .{ .x = x + self.style.padding, .y = rect.y, .width = @max(0, item_width - self.style.padding * 2), .height = rect.height },
+                window.title,
+                .left,
+                self.style.text_offset,
+                true,
+            );
             x += item_width;
         }
     }

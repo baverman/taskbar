@@ -4,8 +4,11 @@ pub const c = @cImport({
     @cInclude("poll.h");
     @cInclude("time.h");
     @cInclude("X11/Xatom.h");
-    @cInclude("X11/Xft/Xft.h");
+    @cInclude("X11/Xlib-xcb.h");
     @cInclude("X11/Xlib.h");
+    @cInclude("X11/Xutil.h");
+    @cInclude("cairo/cairo-xlib.h");
+    @cInclude("pango/pangocairo.h");
 });
 
 pub const Atoms = struct {

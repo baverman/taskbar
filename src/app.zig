@@ -38,10 +38,9 @@ pub const App = struct {
                 .screen_num = screen_num,
                 .root = root,
                 .window = 0,
-                .gc = undefined,
                 .visual = null,
-                .colormap = 0,
-                .xft_draw = undefined,
+                .cairo_surface = undefined,
+                .cairo = undefined,
                 .atoms = atoms,
             },
         };
@@ -61,8 +60,8 @@ pub const App = struct {
     pub fn deinit(app: *App) void {
         for (app.layout.items) |*item| item.widget.deinit(&app.ctx);
         app.layout.deinit(app.ctx.allocator);
-        c.XftDrawDestroy(app.ctx.gfx.xft_draw);
-        _ = c.XFreeGC(app.ctx.gfx.display, app.ctx.gfx.gc);
+        c.cairo_destroy(app.ctx.gfx.cairo);
+        c.cairo_surface_destroy(app.ctx.gfx.cairo_surface);
         if (app.ctx.gfx.window != 0) _ = c.XDestroyWindow(app.ctx.gfx.display, app.ctx.gfx.window);
         _ = c.XCloseDisplay(app.ctx.gfx.display);
     }
@@ -107,10 +106,15 @@ pub const App = struct {
     }
 
     fn createGraphics(app: *App) !void {
-        app.ctx.gfx.gc = c.XCreateGC(app.ctx.gfx.display, app.ctx.gfx.window, 0, null);
         app.ctx.gfx.visual = c.XDefaultVisual(app.ctx.gfx.display, app.ctx.gfx.screen_num);
-        app.ctx.gfx.colormap = c.XDefaultColormap(app.ctx.gfx.display, app.ctx.gfx.screen_num);
-        app.ctx.gfx.xft_draw = c.XftDrawCreate(app.ctx.gfx.display, app.ctx.gfx.window, app.ctx.gfx.visual, app.ctx.gfx.colormap) orelse return error.XftDrawCreateFailed;
+        app.ctx.gfx.cairo_surface = c.cairo_xlib_surface_create(
+            app.ctx.gfx.display,
+            app.ctx.gfx.window,
+            app.ctx.gfx.visual,
+            c.XDisplayWidth(app.ctx.gfx.display, app.ctx.gfx.screen_num),
+            app.ctx.config.height,
+        ) orelse return error.CairoSurfaceCreateFailed;
+        app.ctx.gfx.cairo = c.cairo_create(app.ctx.gfx.cairo_surface) orelse return error.CairoCreateFailed;
     }
 
     fn initLayout(app: *App) !void {

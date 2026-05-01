@@ -12,8 +12,7 @@ const Desktop = struct {
 pub const Pager = struct {
     config: cfg.Pager,
     style: common.ResolvedStyle,
-    font: *c.XftFont,
-    fallback_font: *c.XftFont,
+    font: *c.PangoFontDescription,
     desktops: std.ArrayList(Desktop),
     current_desktop: u32,
 
@@ -23,7 +22,6 @@ pub const Pager = struct {
             .config = config,
             .style = style,
             .font = try ctx.openFont(style.font),
-            .fallback_font = try ctx.openFont(.{ .name = "DejaVu Sans", .size = style.font.size }),
             .desktops = .{},
             .current_desktop = 0,
         };
@@ -32,8 +30,7 @@ pub const Pager = struct {
     pub fn deinit(self: *Pager, ctx: *const common.Context) void {
         for (self.desktops.items) |desktop| ctx.allocator.free(desktop.name);
         self.desktops.deinit(ctx.allocator);
-        c.XftFontClose(ctx.gfx.display, self.font);
-        c.XftFontClose(ctx.gfx.display, self.fallback_font);
+        c.pango_font_description_free(self.font);
     }
 
     pub fn refresh(self: *Pager, ctx: *const common.Context) !void {
@@ -84,7 +81,15 @@ pub const Pager = struct {
             if (desktop.index == self.current_desktop) {
                 ctx.fillRect(self.style.active_bg, .{ .x = x, .y = rect.y, .width = item_width, .height = rect.height });
             }
-            ctx.drawText(self.font, self.fallback_font, if (desktop.index == self.current_desktop) self.style.active_text else self.style.text, x + self.style.padding, ctx.textBaseline(self.font) + self.style.text_offset, desktop.name);
+            ctx.drawText(
+                self.font,
+                if (desktop.index == self.current_desktop) self.style.active_text else self.style.text,
+                .{ .x = x + self.style.padding, .y = rect.y, .width = @max(0, item_width - self.style.padding * 2), .height = rect.height },
+                desktop.name,
+                .left,
+                self.style.text_offset,
+                false,
+            );
             x += item_width;
         }
     }
