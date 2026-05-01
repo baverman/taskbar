@@ -67,11 +67,11 @@ pub const Tray = struct {
     }
 
     pub fn measure(self: *const Tray, ctx: *const common.Context) i32 {
-        return self.widthFor(trayIconSize(ctx.config.height), self.config.item_gap);
+        return self.widthFor(iconSize(self, ctx), self.config.item_gap);
     }
 
     pub fn draw(self: *Tray, ctx: *const common.Context, rect: common.Rect) void {
-        self.relayout(ctx.gfx.display, rect.x, trayY(), trayIconSize(ctx.config.height), self.config.item_gap);
+        self.relayout(ctx.gfx.display, rect.x, trayY(), iconSize(self, ctx), self.config.item_gap);
     }
 
     pub fn handleEvent(self: *Tray, ctx: *const common.Context, rect: common.Rect, event: *const c.XEvent) !common.Update {
@@ -112,9 +112,10 @@ pub const Tray = struct {
     }
 
     fn dock(self: *Tray, ctx: *const common.Context, rect: common.Rect, icon_window: c.Window) !bool {
-        const icon_x = rect.x + @as(i32, @intCast(self.icons.items.len)) * (trayIconSize(ctx.config.height) + self.config.item_gap);
-        const added = try self.addIcon(ctx.gfx.display, ctx.gfx.window, icon_window, icon_x, trayY());
-        if (added) self.relayout(ctx.gfx.display, rect.x, trayY(), trayIconSize(ctx.config.height), self.config.item_gap);
+        const icon_size = iconSize(self, ctx);
+        const icon_x = rect.x + self.widthFor(icon_size, self.config.item_gap);
+        const added = try self.addIcon(ctx.gfx.display, ctx.gfx.window, icon_window, icon_x, trayY(), icon_size);
+        if (added) self.relayout(ctx.gfx.display, rect.x, trayY(), icon_size, self.config.item_gap);
         return added;
     }
 
@@ -125,10 +126,12 @@ pub const Tray = struct {
         icon_window: c.Window,
         panel_x: i32,
         panel_y: i32,
+        icon_size: i32,
     ) !bool {
         if (self.contains(icon_window)) return false;
         _ = c.XSelectInput(display, icon_window, c.StructureNotifyMask | c.PropertyChangeMask);
         _ = c.XReparentWindow(display, icon_window, panel_window, panel_x, panel_y);
+        _ = c.XMoveResizeWindow(display, icon_window, panel_x, panel_y, @intCast(icon_size), @intCast(icon_size));
         _ = c.XMapWindow(display, icon_window);
         try self.icons.append(self.allocator, .{ .window = icon_window });
         self.sendXEmbedEmbeddedNotify(display, icon_window);
@@ -147,10 +150,13 @@ pub const Tray = struct {
 
     fn relayout(self: *Tray, display: *c.Display, start_x: i32, start_y: i32, icon_size: i32, item_gap: i32) void {
         var x = start_x;
-        for (self.icons.items) |icon| {
+        var idx: usize = 0;
+        while (idx < self.icons.items.len) {
+            const icon = self.icons.items[idx];
             _ = c.XMoveResizeWindow(display, icon.window, x, start_y, @intCast(icon_size), @intCast(icon_size));
             _ = c.XMapWindow(display, icon.window);
             x += icon_size + item_gap;
+            idx += 1;
         }
         _ = c.XFlush(display);
     }
@@ -181,6 +187,6 @@ fn trayY() i32 {
     return tray_inset_y;
 }
 
-fn trayIconSize(panel_height: i32) i32 {
-    return panel_height - tray_inset_y * 2;
+fn iconSize(self: *const Tray, ctx: *const common.Context) i32 {
+    return self.config.icon_size orelse (ctx.config.height - tray_inset_y * 2);
 }

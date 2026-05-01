@@ -49,6 +49,7 @@ pub const Taskbar = struct {
 pub const Tray = struct {
     style: StyleOverride = .{},
     width: Width = .min_content,
+    icon_size: ?i32 = null,
     item_gap: i32 = 2,
 };
 
@@ -93,7 +94,7 @@ pub const config = Config{
         .{ .taskbar = .{
             .max_item_width = 500,
         } },
-        .{ .tray = .{} },
+        .{ .tray = .{ .icon_size = 22, } },
         .{ .clock = .{} },
     },
 };

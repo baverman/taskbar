@@ -99,8 +99,8 @@ pub const App = struct {
             width,
             @intCast(app.ctx.config.height),
             0,
-            c.XBlackPixel(app.ctx.gfx.display, app.ctx.gfx.screen_num),
-            c.XBlackPixel(app.ctx.gfx.display, app.ctx.gfx.screen_num),
+            app.ctx.config.style.bg,
+            app.ctx.config.style.bg,
         );
         _ = c.XSelectInput(app.ctx.gfx.display, app.ctx.gfx.window, c.ExposureMask | c.ButtonPressMask | c.StructureNotifyMask | c.SubstructureNotifyMask);
     }
@@ -183,7 +183,16 @@ pub const App = struct {
     }
 
     fn redraw(app: *App) void {
-        if (app.layout_dirty) app.relayout();
+        const needs_full_repaint = app.layout_dirty;
+        if (needs_full_repaint) {
+            app.relayout();
+            app.ctx.fillRect(app.ctx.config.style.bg, .{
+                .x = 0,
+                .y = 0,
+                .width = app.ctx.panelWidth(),
+                .height = app.ctx.config.height,
+            });
+        }
 
         for (app.layout.items) |*item| {
             if (!item.dirty) continue;
@@ -230,6 +239,7 @@ pub const App = struct {
     fn relayout(app: *App) void {
         var fixed_width_total: i32 = 0;
         var flex_index: ?usize = null;
+        var visible_nonflex_count: i32 = 0;
 
         for (app.layout.items, 0..) |*item, idx| {
             const width_cfg = switch (item.config) {
@@ -248,21 +258,33 @@ pub const App = struct {
             };
             item.rect.width = width;
             item.rect.height = app.ctx.config.height;
-            if (flex_index != idx) fixed_width_total += width;
+            if (flex_index != idx) {
+                fixed_width_total += width;
+                if (width > 0) visible_nonflex_count += 1;
+            }
         }
 
-        const count: i32 = @intCast(app.layout.items.len);
-        const total_gaps: i32 = if (count > 1) (count - 1) * app.ctx.config.gap else 0;
-        const remaining = @max(0, app.ctx.panelWidth() - fixed_width_total - total_gaps);
-        if (flex_index) |idx| app.layout.items[idx].rect.width = remaining;
+        if (flex_index) |idx| {
+            const gaps_with_flex = if (visible_nonflex_count > 0) visible_nonflex_count * app.ctx.config.gap else 0;
+            const remaining = @max(0, app.ctx.panelWidth() - fixed_width_total - gaps_with_flex);
+            app.layout.items[idx].rect.width = remaining;
+        }
 
         var x: i32 = 0;
-        for (app.layout.items, 0..) |*item, idx| {
+        var have_visible = false;
+        for (app.layout.items) |*item| {
+            if (item.rect.width <= 0) {
+                item.rect.x = x;
+                item.rect.y = 0;
+                item.dirty = true;
+                continue;
+            }
+            if (have_visible) x += app.ctx.config.gap;
             item.rect.x = x;
             item.rect.y = 0;
             item.dirty = true;
             x += item.rect.width;
-            if (idx + 1 < app.layout.items.len) x += app.ctx.config.gap;
+            have_visible = true;
         }
         app.layout_dirty = false;
     }
