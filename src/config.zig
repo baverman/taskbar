@@ -65,7 +65,7 @@ pub const Clock = struct {
     margin_left: i32 = 0,
     margin_right: i32 = 0,
     text_align: Align = .right,
-    format: []const u8 = "%H:%M",
+    format: [:0]const u8 = "%H:%M",
 };
 
 pub const Widget = union(enum) {
@@ -106,6 +106,6 @@ pub const config = Config{
         .{ .tray = .{
             .icon_size = 22,
         } },
-        .{ .clock = .{} },
+        .{ .clock = .{ .margin_right = 4, } },
     },
 };

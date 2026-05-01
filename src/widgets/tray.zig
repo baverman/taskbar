@@ -7,6 +7,7 @@ const c = x11.c;
 const tray_inset_y = 4;
 const xembed_embedded_notify: c_long = 0;
 const system_tray_request_dock: c_long = 0;
+var tray_bad_window_seen = false;
 
 const TrayIcon = struct {
     window: c.Window,
@@ -129,10 +130,7 @@ pub const Tray = struct {
         icon_size: i32,
     ) !bool {
         if (self.contains(icon_window)) return false;
-        _ = c.XSelectInput(display, icon_window, c.StructureNotifyMask | c.PropertyChangeMask);
-        _ = c.XReparentWindow(display, icon_window, panel_window, panel_x, panel_y);
-        _ = c.XMoveResizeWindow(display, icon_window, panel_x, panel_y, @intCast(icon_size), @intCast(icon_size));
-        _ = c.XMapWindow(display, icon_window);
+        if (!embedIconWindow(display, panel_window, icon_window, panel_x, panel_y, icon_size)) return false;
         try self.icons.append(self.allocator, .{ .window = icon_window });
         self.sendXEmbedEmbeddedNotify(display, icon_window);
         _ = c.XFlush(display);
@@ -153,8 +151,10 @@ pub const Tray = struct {
         var idx: usize = 0;
         while (idx < self.icons.items.len) {
             const icon = self.icons.items[idx];
-            _ = c.XMoveResizeWindow(display, icon.window, x, start_y, @intCast(icon_size), @intCast(icon_size));
-            _ = c.XMapWindow(display, icon.window);
+            if (!moveResizeMapIcon(display, icon.window, x, start_y, icon_size)) {
+                _ = self.icons.orderedRemove(idx);
+                continue;
+            }
             x += icon_size + item_gap;
             idx += 1;
         }
@@ -189,4 +189,53 @@ fn trayY() i32 {
 
 fn iconSize(self: *const Tray, ctx: *const common.Context) i32 {
     return self.config.icon_size orelse (ctx.config.height - tray_inset_y * 2);
+}
+
+fn moveResizeMapIcon(display: *c.Display, icon_window: c.Window, x: i32, y: i32, size: i32) bool {
+    return withBadWindowTolerance(display, moveResizeMapIconUnchecked, .{ icon_window, x, y, size });
+}
+
+fn embedIconWindow(
+    display: *c.Display,
+    panel_window: c.Window,
+    icon_window: c.Window,
+    panel_x: i32,
+    panel_y: i32,
+    icon_size: i32,
+) bool {
+    return withBadWindowTolerance(display, embedIconWindowUnchecked, .{
+        panel_window,
+        icon_window,
+        panel_x,
+        panel_y,
+        icon_size,
+    });
+}
+
+fn withBadWindowTolerance(display: *c.Display, comptime Action: fn (*c.Display, anytype) void, args: anytype) bool {
+    const previous = c.XSetErrorHandler(trayXErrorHandler);
+    defer _ = c.XSetErrorHandler(previous);
+    tray_bad_window_seen = false;
+    Action(display, args);
+    _ = c.XSync(display, c.False);
+    return !tray_bad_window_seen;
+}
+
+fn embedIconWindowUnchecked(display: *c.Display, args: anytype) void {
+    _ = c.XSelectInput(display, args[1], c.StructureNotifyMask | c.PropertyChangeMask);
+    _ = c.XReparentWindow(display, args[1], args[0], args[2], args[3]);
+    _ = c.XMoveResizeWindow(display, args[1], args[2], args[3], @intCast(args[4]), @intCast(args[4]));
+    _ = c.XMapWindow(display, args[1]);
+}
+
+fn moveResizeMapIconUnchecked(display: *c.Display, args: anytype) void {
+    _ = c.XMoveResizeWindow(display, args[0], args[1], args[2], @intCast(args[3]), @intCast(args[3]));
+    _ = c.XMapWindow(display, args[0]);
+}
+
+fn trayXErrorHandler(_: ?*c.Display, event: [*c]c.XErrorEvent) callconv(.c) c_int {
+    if (event != null and event.*.error_code == c.BadWindow) {
+        tray_bad_window_seen = true;
+    }
+    return 0;
 }

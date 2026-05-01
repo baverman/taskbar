@@ -265,37 +265,31 @@ pub const App = struct {
             if (width > 0) visible_order.append(app.ctx.allocator, idx) catch unreachable;
         }
 
+        var spacing_total: i32 = 0;
+        for (visible_order.items) |idx| {
+            spacing_total += widgetMarginLeft(app.layout.items[idx].config);
+            spacing_total += widgetMarginRight(app.layout.items[idx].config);
+        }
+
         if (flex_index) |idx| {
-            var spacing_total: i32 = 0;
-            if (visible_order.items.len > 1) {
-                for (visible_order.items[1..], 0..) |current_idx, prev_i| {
-                    const prev_idx = visible_order.items[prev_i];
-                    spacing_total += widgetMarginRight(app.layout.items[prev_idx].config);
-                    spacing_total += widgetMarginLeft(app.layout.items[current_idx].config);
-                }
-            }
             const remaining = @max(0, app.ctx.panelWidth() - fixed_width_total - spacing_total);
             app.layout.items[idx].rect.width = remaining;
         }
 
         var x: i32 = 0;
-        var prev_visible_idx: ?usize = null;
-        for (app.layout.items, 0..) |*item, idx| {
+        for (app.layout.items) |*item| {
             if (item.rect.width <= 0) {
                 item.rect.x = x;
                 item.rect.y = 0;
                 item.dirty = true;
                 continue;
             }
-            if (prev_visible_idx) |prev_idx| {
-                x += widgetMarginRight(app.layout.items[prev_idx].config);
-                x += widgetMarginLeft(item.config);
-            }
+            x += widgetMarginLeft(item.config);
             item.rect.x = x;
             item.rect.y = 0;
             item.dirty = true;
             x += item.rect.width;
-            prev_visible_idx = idx;
+            x += widgetMarginRight(item.config);
         }
         app.layout_dirty = false;
     }
