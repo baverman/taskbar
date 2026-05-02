@@ -7,7 +7,7 @@ const c = x11.c;
 pub const WindowEntry = struct {
     window: c.Window,
     desktop: u32,
-    title: []u8,
+    title: ?[]u8,
 };
 
 pub const Taskbar = struct {
@@ -29,13 +29,13 @@ pub const Taskbar = struct {
     }
 
     pub fn deinit(self: *Taskbar, ctx: *const common.Context) void {
-        for (self.windows.items) |window| ctx.allocator.free(window.title);
+        for (self.windows.items) |window| if (window.title) |title| ctx.allocator.free(title);
         self.windows.deinit(ctx.allocator);
         c.pango_font_description_free(self.font);
     }
 
     pub fn refresh(self: *Taskbar, ctx: *const common.Context) !void {
-        for (self.windows.items) |window| ctx.allocator.free(window.title);
+        for (self.windows.items) |window| if (window.title) |title| ctx.allocator.free(title);
         self.windows.clearRetainingCapacity();
 
         const current_desktop = try ctx.readCardinalProperty(ctx.gfx.root, ctx.gfx.atoms.net_current_desktop) orelse 0;
@@ -56,8 +56,7 @@ pub const Taskbar = struct {
             if (try ctx.hasAtomProperty(window, ctx.gfx.atoms.net_wm_state, ctx.gfx.atoms.net_wm_state_skip_taskbar)) continue;
             if (try ctx.hasAtomProperty(window, ctx.gfx.atoms.orcsome_state, ctx.gfx.atoms.orcsome_skip_taskbar)) continue;
 
-            const title = try ctx.readWindowTitle(window) orelse continue;
-            errdefer ctx.allocator.free(title);
+            const title = try ctx.readWindowTitle(window) orelse null;
             try self.windows.append(ctx.allocator, .{ .window = window, .desktop = desktop, .title = title });
             if (window == reported_active_window) self.active_window = window;
         }
@@ -91,9 +90,9 @@ pub const Taskbar = struct {
     pub fn draw(self: *Taskbar, ctx: *const common.Context, rect: common.Rect) void {
         const item_width = self.itemWidth(rect.width);
         var x = rect.x;
-        for (self.windows.items, 0..) |window, idx| {
+        for (self.windows.items) |window| {
             if (item_width <= 0) break;
-            const draw_width = if (idx + 1 == self.windows.items.len) rect.x + rect.width - x else item_width;
+            const draw_width = item_width;
             if (window.window == self.active_window) {
                 ctx.fillRect(self.style.active_bg, .{ .x = x, .y = rect.y, .width = draw_width, .height = rect.height });
             }
@@ -101,7 +100,7 @@ pub const Taskbar = struct {
                 self.font,
                 if (window.window == self.active_window) self.style.active_text else self.style.text,
                 .{ .x = x + self.style.padding, .y = rect.y, .width = @max(0, draw_width - self.style.padding * 2), .height = rect.height },
-                window.title,
+                if (window.title) |title| title else "noname",
                 .left,
                 self.style.text_offset,
                 true,
