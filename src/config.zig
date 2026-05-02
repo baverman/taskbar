@@ -106,6 +106,8 @@ pub const config = Config{
         .{ .tray = .{
             .icon_size = 22,
         } },
-        .{ .clock = .{ .margin_right = 4, } },
+        .{ .clock = .{
+            .margin_right = 4,
+        } },
     },
 };

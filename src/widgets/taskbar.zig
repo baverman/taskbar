@@ -1,13 +1,19 @@
 const std = @import("std");
 const cfg = @import("../config.zig");
 const common = @import("common.zig");
-const x11 = @import("../x11.zig");
-const c = x11.c;
+const c = @import("../x11.zig").c;
 
 pub const WindowEntry = struct {
     window: c.Window,
     desktop: u32,
     title: ?[]u8,
+
+    pub fn deinit(self: *WindowEntry, allocator: std.mem.Allocator) void {
+        if (self.title) |title| {
+            allocator.free(title);
+        }
+        self.title = null;
+    }
 };
 
 pub const Taskbar = struct {
@@ -29,13 +35,13 @@ pub const Taskbar = struct {
     }
 
     pub fn deinit(self: *Taskbar, ctx: *const common.Context) void {
-        for (self.windows.items) |window| if (window.title) |title| ctx.allocator.free(title);
+        for (self.windows.items) |*window| window.deinit(ctx.allocator);
         self.windows.deinit(ctx.allocator);
         c.pango_font_description_free(self.font);
     }
 
     pub fn refresh(self: *Taskbar, ctx: *const common.Context) !void {
-        for (self.windows.items) |window| if (window.title) |title| ctx.allocator.free(title);
+        for (self.windows.items) |*window| window.deinit(ctx.allocator);
         self.windows.clearRetainingCapacity();
 
         const current_desktop = try ctx.readCardinalProperty(ctx.gfx.root, ctx.gfx.atoms.net_current_desktop) orelse 0;
