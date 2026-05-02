@@ -17,7 +17,7 @@ pub const App = struct {
     layout: std.ArrayList(LayoutItem),
     layout_dirty: bool,
 
-    pub fn init(allocator: std.mem.Allocator) !App {
+    pub fn init(allocator: std.mem.Allocator, config: *const cfg.Config) !App {
         const display = c.XOpenDisplay(null) orelse return error.XOpenDisplayFailed;
         errdefer _ = c.XCloseDisplay(display);
 
@@ -32,7 +32,7 @@ pub const App = struct {
         };
         app.ctx = .{
             .allocator = allocator,
-            .config = &cfg.config,
+            .config = config,
             .gfx = .{
                 .display = display,
                 .screen_num = screen_num,
