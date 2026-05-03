@@ -5,7 +5,7 @@ const c = x11.c;
 
 pub const Clock = struct {
     config: cfg.Clock,
-    style: common.ResolvedStyle,
+    style: cfg.Style,
     font: *c.PangoFontDescription,
     text: [32]u8,
     len: usize,
@@ -28,9 +28,11 @@ pub const Clock = struct {
         c.pango_font_description_free(self.font);
     }
 
-    pub fn refresh(self: *Clock, ctx: *const common.Context) void {
+    pub fn refresh(self: *Clock, ctx: *const common.Context) !void {
         _ = self.update(ctx);
     }
+
+    pub fn start(_: *Clock, _: *const common.Context) !void {}
 
     pub fn tick(self: *Clock, ctx: *const common.Context) common.Update {
         if (!self.update(ctx)) return .{};
@@ -58,10 +60,11 @@ pub const Clock = struct {
         );
     }
 
-    pub fn handleEvent(self: *Clock, ctx: *const common.Context, event: *const c.XEvent) common.Update {
-        _ = self;
-        _ = ctx;
-        _ = event;
+    pub fn handleEvent(_: *Clock, _: *const common.Context, _: common.Rect, _: *const c.XEvent) !common.Update {
+        return .{};
+    }
+
+    pub fn click(_: *Clock, _: *const common.Context, _: common.Rect, _: i32, _: i32) common.Update {
         return .{};
     }
 

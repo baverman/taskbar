@@ -15,7 +15,7 @@ const TrayIcon = struct {
 
 pub const Tray = struct {
     config: cfg.Tray,
-    style: common.ResolvedStyle,
+    style: cfg.Style,
     allocator: std.mem.Allocator,
     icons: std.ArrayList(TrayIcon),
     owner_window: c.Window,
@@ -40,16 +40,14 @@ pub const Tray = struct {
         };
     }
 
-    pub fn deinit(self: *Tray) void {
+    pub fn deinit(self: *Tray, ctx: *const common.Context) void {
+        _ = ctx;
         self.icons.deinit(self.allocator);
     }
 
-    pub fn refresh(self: *Tray, ctx: *const common.Context) void {
-        _ = self;
-        _ = ctx;
-    }
+    pub fn refresh(_: *Tray, _: *const common.Context) !void {}
 
-    pub fn claimSelection(self: *Tray, ctx: *const common.Context) !void {
+    pub fn start(self: *Tray, ctx: *const common.Context) !void {
         _ = c.XSetSelectionOwner(ctx.gfx.display, self.selection_atom, self.owner_window, c.CurrentTime);
         if (c.XGetSelectionOwner(ctx.gfx.display, self.selection_atom) != self.owner_window) {
             return error.TraySelectionUnavailable;
@@ -93,6 +91,14 @@ pub const Tray = struct {
             },
             else => return .{},
         }
+    }
+
+    pub fn click(_: *Tray, _: *const common.Context, _: common.Rect, _: i32, _: i32) common.Update {
+        return .{};
+    }
+
+    pub fn tick(_: *Tray, _: *const common.Context) common.Update {
+        return .{};
     }
 
     fn widthFor(self: *const Tray, icon_size: i32, item_gap: i32) i32 {

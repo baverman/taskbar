@@ -63,7 +63,7 @@ pub const Tray = struct {
 
 pub const Clock = struct {
     style: StyleOverride = .{},
-    width: Width = .{ .fixed = 70 },
+    width: Width = .min_content,
     margin_left: i32 = 0,
     margin_right: i32 = 0,
     text_align: Align = .right,
@@ -121,7 +121,10 @@ pub fn load(allocator: std.mem.Allocator) !Config {
     const config_path = path orelse return defaultConfig();
     defer allocator.free(config_path);
 
-    const file = try std.fs.openFileAbsolute(config_path, .{});
+    const file = std.fs.openFileAbsolute(config_path, .{}) catch |err| switch (err) {
+        error.FileNotFound => return defaultConfig(),
+        else => return err,
+    };
     defer file.close();
 
     const source = try file.readToEndAllocOptions(
@@ -131,6 +134,7 @@ pub fn load(allocator: std.mem.Allocator) !Config {
         .of(u8),
         0,
     );
+    defer allocator.free(source);
 
     var diag: std.zon.parse.Diagnostics = .{};
     defer diag.deinit(allocator);
@@ -139,7 +143,9 @@ pub fn load(allocator: std.mem.Allocator) !Config {
         .free_on_error = false,
     }) catch |err| switch (err) {
         error.ParseZon => {
-            printParseError(config_path, &diag);
+            std.debug.print("failed to parse config {s}\n", .{config_path});
+            var stderr_writer = std.fs.File.stderr().writer(&.{});
+            diag.format(&stderr_writer.interface) catch {};
             return error.ParseZon;
         },
         else => return err,
@@ -147,46 +153,11 @@ pub fn load(allocator: std.mem.Allocator) !Config {
 }
 
 fn findConfigPath(allocator: std.mem.Allocator) !?[]const u8 {
-    if (try xdgConfigPath(allocator)) |path| {
-        if (try fileExists(path)) return path;
-        allocator.free(path);
+    if (std.posix.getenv("XDG_CONFIG_HOME")) |xdg| {
+        return try std.fs.path.join(allocator, &.{ xdg, "taskbar.zon" });
     }
-
-    if (try homeConfigPath(allocator)) |path| {
-        if (try fileExists(path)) return path;
-        allocator.free(path);
+    if (std.posix.getenv("HOME")) |home| {
+        return try std.fs.path.join(allocator, &.{ home, ".config", "taskbar.zon" });
     }
-
     return null;
-}
-
-fn xdgConfigPath(allocator: std.mem.Allocator) !?[]const u8 {
-    const xdg = std.posix.getenv("XDG_CONFIG_HOME") orelse return null;
-
-    return try std.fs.path.join(allocator, &.{ xdg, "taskbar.zon" });
-}
-
-fn homeConfigPath(allocator: std.mem.Allocator) !?[]const u8 {
-    const home = std.posix.getenv("HOME") orelse return null;
-
-    return try std.fs.path.join(allocator, &.{ home, ".config", "taskbar.zon" });
-}
-
-fn fileExists(path: []const u8) !bool {
-    const file = std.fs.openFileAbsolute(path, .{}) catch |err| switch (err) {
-        error.FileNotFound => return false,
-        else => return err,
-    };
-    file.close();
-    return true;
-}
-
-fn printParseError(path: []const u8, diag: *const std.zon.parse.Diagnostics) void {
-    std.debug.print("failed to parse config {s}\n", .{path});
-
-    var buffer: [4096]u8 = undefined;
-    var stderr_writer = std.fs.File.stderr().writer(&buffer);
-    const writer = &stderr_writer.interface;
-    diag.format(writer) catch {};
-    writer.flush() catch {};
 }

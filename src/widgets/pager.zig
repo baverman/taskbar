@@ -11,7 +11,7 @@ const Desktop = struct {
 
 pub const Pager = struct {
     config: cfg.Pager,
-    style: common.ResolvedStyle,
+    style: cfg.Style,
     font: *c.PangoFontDescription,
     desktops: std.ArrayList(Desktop),
     current_desktop: u32,
@@ -54,7 +54,10 @@ pub const Pager = struct {
         }
     }
 
-    pub fn handleEvent(self: *Pager, ctx: *const common.Context, event: *const c.XEvent) !common.Update {
+    pub fn start(_: *Pager, _: *const common.Context) !void {}
+
+    pub fn handleEvent(self: *Pager, ctx: *const common.Context, rect: common.Rect, event: *const c.XEvent) !common.Update {
+        _ = rect;
         if (event.type != c.PropertyNotify) return .{};
         const property = event.xproperty;
         if (property.window != ctx.gfx.root) return .{};
@@ -94,17 +97,21 @@ pub const Pager = struct {
         }
     }
 
-    pub fn click(self: *Pager, ctx: *const common.Context, rect: common.Rect, x: i32, y: i32) bool {
+    pub fn click(self: *Pager, ctx: *const common.Context, rect: common.Rect, x: i32, y: i32) common.Update {
         _ = y;
         var left = rect.x;
         for (self.desktops.items) |desktop| {
             const width = ctx.textItemWidth(self.font, desktop.name, self.style.padding);
             if (x >= left and x <= left + width) {
                 ctx.setCurrentDesktop(desktop.index);
-                return true;
+                return .{};
             }
             left += width;
         }
-        return false;
+        return .{};
+    }
+
+    pub fn tick(_: *Pager, _: *const common.Context) common.Update {
+        return .{};
     }
 };

@@ -18,7 +18,7 @@ pub const WindowEntry = struct {
 
 pub const Taskbar = struct {
     config: cfg.Taskbar,
-    style: common.ResolvedStyle,
+    style: cfg.Style,
     font: *c.PangoFontDescription,
     windows: std.ArrayList(WindowEntry),
     active_window: c.Window,
@@ -68,7 +68,10 @@ pub const Taskbar = struct {
         }
     }
 
-    pub fn handleEvent(self: *Taskbar, ctx: *const common.Context, event: *const c.XEvent) !common.Update {
+    pub fn start(_: *Taskbar, _: *const common.Context) !void {}
+
+    pub fn handleEvent(self: *Taskbar, ctx: *const common.Context, rect: common.Rect, event: *const c.XEvent) !common.Update {
+        _ = rect;
         if (event.type != c.PropertyNotify) return .{};
         const property = event.xproperty;
         if (property.window == ctx.gfx.window) return .{};
@@ -115,7 +118,7 @@ pub const Taskbar = struct {
         }
     }
 
-    pub fn click(self: *Taskbar, ctx: *const common.Context, rect: common.Rect, x: i32, y: i32) bool {
+    pub fn click(self: *Taskbar, ctx: *const common.Context, rect: common.Rect, x: i32, y: i32) common.Update {
         _ = y;
         const width = self.itemWidth(rect.width);
         var left = rect.x;
@@ -123,11 +126,15 @@ pub const Taskbar = struct {
             const draw_width = if (idx + 1 == self.windows.items.len) rect.x + rect.width - left else width;
             if (x >= left and x <= left + draw_width) {
                 ctx.activateWindow(window.window);
-                return true;
+                return .{};
             }
             left += draw_width;
         }
-        return false;
+        return .{};
+    }
+
+    pub fn tick(_: *Taskbar, _: *const common.Context) common.Update {
+        return .{};
     }
 
     fn itemWidth(self: *const Taskbar, total_width: i32) i32 {

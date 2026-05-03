@@ -15,16 +15,6 @@ pub const Update = packed struct {
     relayout: bool = false,
 };
 
-pub const ResolvedStyle = struct {
-    font: cfg.Font,
-    bg: u32,
-    text: u32,
-    active_bg: u32,
-    active_text: u32,
-    padding: i32,
-    text_offset: i32,
-};
-
 pub const Gfx = struct {
     display: *c.Display,
     screen_num: c_int,
@@ -242,7 +232,7 @@ pub const Context = struct {
     }
 };
 
-pub fn resolveStyle(base: cfg.Style, override: cfg.StyleOverride) ResolvedStyle {
+pub fn resolveStyle(base: cfg.Style, override: cfg.StyleOverride) cfg.Style {
     return .{
         .font = override.font orelse base.font,
         .bg = override.bg orelse base.bg,

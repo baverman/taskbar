@@ -1,12 +1,12 @@
 const std = @import("std");
 const cfg = @import("config.zig");
 const x11 = @import("x11.zig");
-const widgets = @import("widgets/widget.zig");
 const common = @import("widgets/common.zig");
+const widget_mod = @import("widgets/widget.zig");
 const c = x11.c;
 
 const LayoutItem = struct {
-    widget: widgets.Widget,
+    widget: widget_mod.Widget,
     config: cfg.Widget,
     rect: common.Rect,
     dirty: bool = true,
@@ -51,7 +51,7 @@ pub const App = struct {
         try app.refreshLayoutWidgets();
         app.setDockProperties();
         app.subscribeRootChanges();
-        try app.claimTraySelections();
+        try app.startWidgets();
         app.mapWindow();
         app.redraw();
         return app;
@@ -77,7 +77,9 @@ pub const App = struct {
         while (true) {
             try app.processPendingEvents();
             for (app.layout.items) |*item| {
-                const update = item.widget.tick(&app.ctx);
+                const update = switch (item.widget) {
+                    inline else => |*w| w.tick(&app.ctx),
+                };
                 if (update.redraw) item.dirty = true;
                 if (update.relayout) app.layout_dirty = true;
             }
@@ -120,7 +122,7 @@ pub const App = struct {
     fn initLayout(app: *App) !void {
         for (app.ctx.config.widgets) |widget_cfg| {
             try app.layout.append(app.ctx.allocator, .{
-                .widget = try widgets.Widget.initFromConfig(&app.ctx, app.ctx.config.style, widget_cfg),
+                .widget = try widget_mod.Widget.initFromConfig(&app.ctx, app.ctx.config.style, widget_cfg),
                 .config = widget_cfg,
                 .rect = .{ .x = 0, .y = 0, .width = 0, .height = app.ctx.config.height },
                 .dirty = true,
@@ -129,11 +131,15 @@ pub const App = struct {
     }
 
     fn refreshLayoutWidgets(app: *App) !void {
-        for (app.layout.items) |*item| try item.widget.refresh(&app.ctx);
+        for (app.layout.items) |*item| switch (item.widget) {
+            inline else => |*w| try w.refresh(&app.ctx),
+        };
     }
 
-    fn claimTraySelections(app: *App) !void {
-        for (app.layout.items) |*item| try item.widget.claimSelection(&app.ctx);
+    fn startWidgets(app: *App) !void {
+        for (app.layout.items) |*item| switch (item.widget) {
+            inline else => |*w| try w.start(&app.ctx),
+        };
     }
 
     fn mapWindow(app: *App) void {
@@ -197,7 +203,9 @@ pub const App = struct {
         for (app.layout.items) |*item| {
             if (!item.dirty) continue;
             app.ctx.fillRect(app.ctx.config.style.bg, item.rect);
-            item.widget.draw(&app.ctx, item.rect);
+            switch (item.widget) {
+                inline else => |*w| w.draw(&app.ctx, item.rect),
+            }
             item.dirty = false;
         }
         _ = c.XFlush(app.ctx.gfx.display);
@@ -221,7 +229,9 @@ pub const App = struct {
         if (y < 0 or y > app.ctx.config.height) return;
         for (app.layout.items) |*item| {
             if (x < item.rect.x or x > item.rect.x + item.rect.width) continue;
-            const update = item.widget.click(&app.ctx, item.rect, x, y);
+            const update = switch (item.widget) {
+                inline else => |*w| w.click(&app.ctx, item.rect, x, y),
+            };
             if (update.redraw) item.dirty = true;
             if (update.relayout) app.layout_dirty = true;
             return;
@@ -230,7 +240,9 @@ pub const App = struct {
 
     fn handleEvent(app: *App, event: *const c.XEvent) !void {
         for (app.layout.items) |*item| {
-            const update = try item.widget.handleEvent(&app.ctx, item.rect, event);
+            const update = switch (item.widget) {
+                inline else => |*w| try w.handleEvent(&app.ctx, item.rect, event),
+            };
             if (update.redraw) item.dirty = true;
             if (update.relayout) app.layout_dirty = true;
         }
@@ -250,7 +262,9 @@ pub const App = struct {
                 .clock => |v| v.width,
             };
             const width = switch (width_cfg) {
-                .min_content => item.widget.measure(&app.ctx),
+                .min_content => switch (item.widget) {
+                    inline else => |*w| w.measure(&app.ctx),
+                },
                 .fixed => |w| w,
                 .flex => blk: {
                     flex_index = idx;
