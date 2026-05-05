@@ -104,103 +104,45 @@ pub const Context = struct {
 
     pub fn readWindowTitleInto(ctx: *const Context, dst: []u8, window: c.Window) ![]const u8 {
         if (try ctx.readPropertyBytesInto(dst, window, ctx.gfx.atoms.net_wm_name, ctx.gfx.atoms.utf8_string)) |title| return title;
-        return (try ctx.readPropertyBytesAnyInto(dst, window, ctx.gfx.atoms.wm_name)) orelse &.{};
+        return (try ctx.readPropertyBytesInto(dst, window, ctx.gfx.atoms.wm_name, c.AnyPropertyType)) orelse &.{};
     }
 
     pub fn readCardinalProperty(ctx: *const Context, window: c.Window, atom: c.Atom) !?u32 {
-        var actual_type: c.Atom = 0;
-        var actual_format: c_int = 0;
-        var nitems: c_ulong = 0;
-        var bytes_after: c_ulong = 0;
-        var prop: [*c]u8 = null;
-        if (c.XGetWindowProperty(ctx.gfx.display, window, atom, 0, 1, c.False, c.XA_CARDINAL, &actual_type, &actual_format, &nitems, &bytes_after, &prop) != c.Success) return null;
-        defer {
-            if (prop != null) _ = c.XFree(prop);
-        }
-        if (nitems == 0 or actual_format != 32 or prop == null) return null;
-        const values: [*]c_ulong = @ptrCast(@alignCast(prop));
+        const prop = try ctx.getProperty(window, atom, 0, 1, c.XA_CARDINAL, 32) orelse return null;
+        defer prop.deinit();
+        const values: [*]const c_ulong = @ptrCast(@alignCast(prop.bytes.ptr));
         return @truncate(values[0]);
     }
 
     pub fn readWindowProperty(ctx: *const Context, window: c.Window, atom: c.Atom) !?c.Window {
-        var actual_type: c.Atom = 0;
-        var actual_format: c_int = 0;
-        var nitems: c_ulong = 0;
-        var bytes_after: c_ulong = 0;
-        var prop: [*c]u8 = null;
-        if (c.XGetWindowProperty(ctx.gfx.display, window, atom, 0, 1, c.False, c.XA_WINDOW, &actual_type, &actual_format, &nitems, &bytes_after, &prop) != c.Success) return null;
-        defer {
-            if (prop != null) _ = c.XFree(prop);
-        }
-        if (nitems == 0 or actual_format != 32 or prop == null) return null;
-        const values: [*]c_ulong = @ptrCast(@alignCast(prop));
+        const prop = try ctx.getProperty(window, atom, 0, 1, c.XA_WINDOW, 32) orelse return null;
+        defer prop.deinit();
+        const values: [*]const c_ulong = @ptrCast(@alignCast(prop.bytes.ptr));
         return values[0];
     }
 
     pub fn readWindowListProperty(ctx: *const Context, window: c.Window, atom: c.Atom) !?[]c.Window {
-        var actual_type: c.Atom = 0;
-        var actual_format: c_int = 0;
-        var nitems: c_ulong = 0;
-        var bytes_after: c_ulong = 0;
-        var prop: [*c]u8 = null;
-        if (c.XGetWindowProperty(ctx.gfx.display, window, atom, 0, 4096, c.False, c.XA_WINDOW, &actual_type, &actual_format, &nitems, &bytes_after, &prop) != c.Success) return null;
-        defer {
-            if (prop != null) _ = c.XFree(prop);
-        }
-        if (nitems == 0 or actual_format != 32 or prop == null) return null;
-        const values: [*]c_ulong = @ptrCast(@alignCast(prop));
-        const owned = try ctx.allocator.alloc(c.Window, @intCast(nitems));
+        const prop = try ctx.getProperty(window, atom, 0, 4096, c.XA_WINDOW, 32) orelse return null;
+        defer prop.deinit();
+        const values: [*]const c_ulong = @ptrCast(@alignCast(prop.bytes.ptr));
+        const owned = try ctx.allocator.alloc(c.Window, prop.nitems);
         for (owned, 0..) |*dst, idx| dst.* = values[idx];
         return owned;
     }
 
     pub fn readPropertyBytesInto(ctx: *const Context, dst: []u8, window: c.Window, atom: c.Atom, expected_type: c.Atom) !?[]const u8 {
-        var actual_type: c.Atom = 0;
-        var actual_format: c_int = 0;
-        var nitems: c_ulong = 0;
-        var bytes_after: c_ulong = 0;
-        var prop: [*c]u8 = null;
-        if (c.XGetWindowProperty(ctx.gfx.display, window, atom, 0, 4096, c.False, expected_type, &actual_type, &actual_format, &nitems, &bytes_after, &prop) != c.Success) return null;
-        defer {
-            if (prop != null) _ = c.XFree(prop);
-        }
-        if (nitems == 0 or actual_format != 8 or prop == null) return null;
-        const raw: [*]const u8 = @ptrCast(prop);
-        const len = @min(dst.len, @as(usize, @intCast(nitems)));
-        @memcpy(dst[0..len], raw[0..len]);
-        return dst[0..len];
-    }
-
-    pub fn readPropertyBytesAnyInto(ctx: *const Context, dst: []u8, window: c.Window, atom: c.Atom) !?[]const u8 {
-        var actual_type: c.Atom = 0;
-        var actual_format: c_int = 0;
-        var nitems: c_ulong = 0;
-        var bytes_after: c_ulong = 0;
-        var prop: [*c]u8 = null;
-        if (c.XGetWindowProperty(ctx.gfx.display, window, atom, 0, 4096, c.False, c.AnyPropertyType, &actual_type, &actual_format, &nitems, &bytes_after, &prop) != c.Success) return null;
-        defer {
-            if (prop != null) _ = c.XFree(prop);
-        }
-        if (nitems == 0 or actual_format != 8 or prop == null) return null;
-        const raw: [*]const u8 = @ptrCast(prop);
-        const len = @min(dst.len, @as(usize, @intCast(nitems)));
-        @memcpy(dst[0..len], raw[0..len]);
+        const prop = try ctx.getProperty(window, atom, 0, 4096, expected_type, 8) orelse return null;
+        defer prop.deinit();
+        const len = @min(dst.len, prop.bytes.len);
+        @memcpy(dst[0..len], prop.bytes[0..len]);
         return dst[0..len];
     }
 
     pub fn hasAtomProperty(ctx: *const Context, window: c.Window, property_atom: c.Atom, expected_atom: c.Atom) !bool {
-        var actual_type: c.Atom = 0;
-        var actual_format: c_int = 0;
-        var nitems: c_ulong = 0;
-        var bytes_after: c_ulong = 0;
-        var prop: [*c]u8 = null;
-        if (c.XGetWindowProperty(ctx.gfx.display, window, property_atom, 0, 32, c.False, c.XA_ATOM, &actual_type, &actual_format, &nitems, &bytes_after, &prop) != c.Success) return false;
-        defer {
-            if (prop != null) _ = c.XFree(prop);
-        }
-        if (nitems == 0 or actual_format != 32 or prop == null) return false;
-        const values: [*]c_ulong = @ptrCast(@alignCast(prop));
-        for (0..@intCast(nitems)) |idx| {
+        const prop = try ctx.getProperty(window, property_atom, 0, 32, c.XA_ATOM, 32) orelse return false;
+        defer prop.deinit();
+        const values: [*]const c_ulong = @ptrCast(@alignCast(prop.bytes.ptr));
+        for (0..prop.nitems) |idx| {
             if (values[idx] == expected_atom) return true;
         }
         return false;
@@ -233,6 +175,48 @@ pub const Context = struct {
         event.xclient.data.l[2] = 0;
         _ = c.XSendEvent(ctx.gfx.display, ctx.gfx.root, c.False, c.SubstructureRedirectMask | c.SubstructureNotifyMask, &event);
         _ = c.XFlush(ctx.gfx.display);
+    }
+
+    const PropertyData = struct {
+        actual_type: c.Atom,
+        actual_format: c_int,
+        nitems: usize,
+        bytes: []const u8,
+        raw_prop: [*c]u8,
+
+        fn deinit(self: @This()) void {
+            if (self.raw_prop != null) _ = c.XFree(self.raw_prop);
+        }
+    };
+
+    fn getProperty(ctx: *const Context, window: c.Window, atom: c.Atom, long_offset: c_long, long_length: c_long, req_type: c.Atom, req_format: c_int) !?PropertyData {
+        var actual_type: c.Atom = 0;
+        var actual_format: c_int = 0;
+        var nitems: c_ulong = 0;
+        var bytes_after: c_ulong = 0;
+        var prop: [*c]u8 = null;
+        if (c.XGetWindowProperty(ctx.gfx.display, window, atom, long_offset, long_length, c.False, req_type, &actual_type, &actual_format, &nitems, &bytes_after, &prop) != c.Success) return null;
+        if (nitems == 0 or prop == null or actual_format != req_format) {
+            if (prop != null) _ = c.XFree(prop);
+            return null;
+        }
+        const len = switch (req_format) {
+            8 => @as(usize, @intCast(nitems)),
+            16 => @as(usize, @intCast(nitems)) * 2,
+            32 => @as(usize, @intCast(nitems)) * @sizeOf(c_ulong),
+            else => 0,
+        };
+        if (len == 0) {
+            _ = c.XFree(prop);
+            return null;
+        }
+        return .{
+            .actual_type = actual_type,
+            .actual_format = actual_format,
+            .nitems = @intCast(nitems),
+            .bytes = @as([*]const u8, @ptrCast(prop))[0..len],
+            .raw_prop = prop,
+        };
     }
 };
 
