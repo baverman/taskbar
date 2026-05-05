@@ -53,15 +53,13 @@ pub const Tray = struct {
             return error.TraySelectionUnavailable;
         }
 
-        var event = std.mem.zeroes(c.XEvent);
-        event.xclient.type = c.ClientMessage;
-        event.xclient.window = ctx.gfx.root;
-        event.xclient.message_type = self.manager_atom;
-        event.xclient.format = 32;
-        event.xclient.data.l[0] = c.CurrentTime;
-        event.xclient.data.l[1] = @intCast(self.selection_atom);
-        event.xclient.data.l[2] = @intCast(self.owner_window);
-        _ = c.XSendEvent(ctx.gfx.display, ctx.gfx.root, c.False, c.StructureNotifyMask, &event);
+        x11.sendClientMessage(
+            ctx.gfx.display,
+            ctx.gfx.root,
+            self.manager_atom,
+            c.StructureNotifyMask,
+            .{ c.CurrentTime, @intCast(self.selection_atom), @intCast(self.owner_window), 0, 0 },
+        );
         _ = c.XFlush(ctx.gfx.display);
     }
 
@@ -175,17 +173,13 @@ pub const Tray = struct {
     }
 
     fn sendXEmbedEmbeddedNotify(self: *Tray, display: *c.Display, icon_window: c.Window) void {
-        var event = std.mem.zeroes(c.XEvent);
-        event.xclient.type = c.ClientMessage;
-        event.xclient.window = icon_window;
-        event.xclient.message_type = self.xembed_atom;
-        event.xclient.format = 32;
-        event.xclient.data.l[0] = c.CurrentTime;
-        event.xclient.data.l[1] = xembed_embedded_notify;
-        event.xclient.data.l[2] = 0;
-        event.xclient.data.l[3] = @intCast(self.owner_window);
-        event.xclient.data.l[4] = 0;
-        _ = c.XSendEvent(display, icon_window, c.False, c.NoEventMask, &event);
+        x11.sendClientMessage(
+            display,
+            icon_window,
+            self.xembed_atom,
+            c.NoEventMask,
+            .{ c.CurrentTime, xembed_embedded_notify, 0, @intCast(self.owner_window), 0 },
+        );
     }
 };
 

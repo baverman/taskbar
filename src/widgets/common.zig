@@ -153,27 +153,24 @@ pub const Context = struct {
     }
 
     pub fn setCurrentDesktop(ctx: *const Context, index: u32) void {
-        var event = std.mem.zeroes(c.XEvent);
-        event.xclient.type = c.ClientMessage;
-        event.xclient.window = ctx.gfx.root;
-        event.xclient.message_type = ctx.gfx.atoms.net_current_desktop;
-        event.xclient.format = 32;
-        event.xclient.data.l[0] = index;
-        event.xclient.data.l[1] = c.CurrentTime;
-        _ = c.XSendEvent(ctx.gfx.display, ctx.gfx.root, c.False, c.SubstructureRedirectMask | c.SubstructureNotifyMask, &event);
+        x11.sendClientMessage(
+            ctx.gfx.display,
+            ctx.gfx.root,
+            ctx.gfx.atoms.net_current_desktop,
+            c.SubstructureRedirectMask | c.SubstructureNotifyMask,
+            .{ index, c.CurrentTime, 0, 0, 0 },
+        );
         _ = c.XFlush(ctx.gfx.display);
     }
 
     pub fn activateWindow(ctx: *const Context, window: c.Window) void {
-        var event = std.mem.zeroes(c.XEvent);
-        event.xclient.type = c.ClientMessage;
-        event.xclient.window = window;
-        event.xclient.message_type = ctx.gfx.atoms.net_active_window;
-        event.xclient.format = 32;
-        event.xclient.data.l[0] = 1;
-        event.xclient.data.l[1] = c.CurrentTime;
-        event.xclient.data.l[2] = 0;
-        _ = c.XSendEvent(ctx.gfx.display, ctx.gfx.root, c.False, c.SubstructureRedirectMask | c.SubstructureNotifyMask, &event);
+        x11.sendClientMessage(
+            ctx.gfx.display,
+            window,
+            ctx.gfx.atoms.net_active_window,
+            c.SubstructureRedirectMask | c.SubstructureNotifyMask,
+            .{ 1, c.CurrentTime, 0, 0, 0 },
+        );
         _ = c.XFlush(ctx.gfx.display);
     }
 
