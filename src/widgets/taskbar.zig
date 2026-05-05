@@ -3,16 +3,16 @@ const cfg = @import("../config.zig");
 const common = @import("common.zig");
 const c = @import("../x11.zig").c;
 
+const max_title_len = 512;
+
 pub const WindowEntry = struct {
     window: c.Window,
     desktop: u32,
-    title: ?[]u8,
+    title_buf: [max_title_len]u8 = undefined,
+    title_len: usize = 0,
 
-    pub fn deinit(self: *WindowEntry, allocator: std.mem.Allocator) void {
-        if (self.title) |title| {
-            allocator.free(title);
-        }
-        self.title = null;
+    pub fn title(self: *const @This()) []const u8 {
+        return self.title_buf[0..self.title_len];
     }
 };
 
@@ -35,13 +35,11 @@ pub const Taskbar = struct {
     }
 
     pub fn deinit(self: *Taskbar, ctx: *const common.Context) void {
-        for (self.windows.items) |*window| window.deinit(ctx.allocator);
         self.windows.deinit(ctx.allocator);
         c.pango_font_description_free(self.font);
     }
 
     pub fn refresh(self: *Taskbar, ctx: *const common.Context) !void {
-        for (self.windows.items) |*window| window.deinit(ctx.allocator);
         self.windows.clearRetainingCapacity();
 
         const current_desktop = try ctx.readCardinalProperty(ctx.gfx.root, ctx.gfx.atoms.net_current_desktop) orelse 0;
@@ -62,8 +60,13 @@ pub const Taskbar = struct {
             if (try ctx.hasAtomProperty(window, ctx.gfx.atoms.net_wm_state, ctx.gfx.atoms.net_wm_state_skip_taskbar)) continue;
             if (try ctx.hasAtomProperty(window, ctx.gfx.atoms.orcsome_state, ctx.gfx.atoms.orcsome_skip_taskbar)) continue;
 
-            const title = try ctx.readWindowTitle(window) orelse null;
-            try self.windows.append(ctx.allocator, .{ .window = window, .desktop = desktop, .title = title });
+            var entry = WindowEntry{
+                .window = window,
+                .desktop = desktop,
+            };
+            const title = try ctx.readWindowTitleInto(&entry.title_buf, window);
+            entry.title_len = title.len;
+            try self.windows.append(ctx.allocator, entry);
             if (window == reported_active_window) self.active_window = window;
         }
     }
@@ -109,7 +112,7 @@ pub const Taskbar = struct {
                 self.font,
                 if (window.window == self.active_window) self.style.active_text else self.style.text,
                 .{ .x = x + self.style.padding, .y = rect.y, .width = @max(0, draw_width - self.style.padding * 2), .height = rect.height },
-                if (window.title) |title| title else "noname",
+                if (window.title_len != 0) window.title() else "noname",
                 .left,
                 self.style.text_offset,
                 true,

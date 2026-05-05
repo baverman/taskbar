@@ -102,9 +102,9 @@ pub const Context = struct {
         _ = c.cairo_restore(ctx.gfx.cairo);
     }
 
-    pub fn readWindowTitle(ctx: *const Context, window: c.Window) !?[]u8 {
-        if (try ctx.readPropertyBytes(window, ctx.gfx.atoms.net_wm_name, ctx.gfx.atoms.utf8_string)) |title| return title;
-        return try ctx.readPropertyBytesAny(window, ctx.gfx.atoms.wm_name);
+    pub fn readWindowTitleInto(ctx: *const Context, dst: []u8, window: c.Window) ![]const u8 {
+        if (try ctx.readPropertyBytesInto(dst, window, ctx.gfx.atoms.net_wm_name, ctx.gfx.atoms.utf8_string)) |title| return title;
+        return (try ctx.readPropertyBytesAnyInto(dst, window, ctx.gfx.atoms.wm_name)) orelse &.{};
     }
 
     pub fn readCardinalProperty(ctx: *const Context, window: c.Window, atom: c.Atom) !?u32 {
@@ -154,7 +154,7 @@ pub const Context = struct {
         return owned;
     }
 
-    pub fn readPropertyBytes(ctx: *const Context, window: c.Window, atom: c.Atom, expected_type: c.Atom) !?[]u8 {
+    pub fn readPropertyBytesInto(ctx: *const Context, dst: []u8, window: c.Window, atom: c.Atom, expected_type: c.Atom) !?[]const u8 {
         var actual_type: c.Atom = 0;
         var actual_format: c_int = 0;
         var nitems: c_ulong = 0;
@@ -166,10 +166,12 @@ pub const Context = struct {
         }
         if (nitems == 0 or actual_format != 8 or prop == null) return null;
         const raw: [*]const u8 = @ptrCast(prop);
-        return try ctx.allocator.dupe(u8, raw[0..@intCast(nitems)]);
+        const len = @min(dst.len, @as(usize, @intCast(nitems)));
+        @memcpy(dst[0..len], raw[0..len]);
+        return dst[0..len];
     }
 
-    pub fn readPropertyBytesAny(ctx: *const Context, window: c.Window, atom: c.Atom) !?[]u8 {
+    pub fn readPropertyBytesAnyInto(ctx: *const Context, dst: []u8, window: c.Window, atom: c.Atom) !?[]const u8 {
         var actual_type: c.Atom = 0;
         var actual_format: c_int = 0;
         var nitems: c_ulong = 0;
@@ -181,7 +183,9 @@ pub const Context = struct {
         }
         if (nitems == 0 or actual_format != 8 or prop == null) return null;
         const raw: [*]const u8 = @ptrCast(prop);
-        return try ctx.allocator.dupe(u8, raw[0..@intCast(nitems)]);
+        const len = @min(dst.len, @as(usize, @intCast(nitems)));
+        @memcpy(dst[0..len], raw[0..len]);
+        return dst[0..len];
     }
 
     pub fn hasAtomProperty(ctx: *const Context, window: c.Window, property_atom: c.Atom, expected_atom: c.Atom) !bool {
