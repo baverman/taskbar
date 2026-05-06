@@ -2,6 +2,7 @@ const std = @import("std");
 const cfg = @import("../config.zig");
 const x11 = @import("../x11.zig");
 const c = x11.c;
+const utils = @import("../utils.zig");
 
 pub const Rect = struct {
     x: i32,
@@ -102,9 +103,14 @@ pub const Context = struct {
         _ = c.cairo_restore(ctx.gfx.cairo);
     }
 
-    pub fn readWindowTitleInto(ctx: *const Context, dst: []u8, window: c.Window) ![]const u8 {
-        if (try ctx.readPropertyBytesInto(dst, window, ctx.gfx.atoms.net_wm_name, ctx.gfx.atoms.utf8_string)) |title| return title;
-        return (try ctx.readPropertyBytesInto(dst, window, ctx.gfx.atoms.wm_name, c.AnyPropertyType)) orelse &.{};
+    pub fn readWindowTitleInto(ctx: *const Context, dst: []u8, window: c.Window) !?[]const u8 {
+        if (try ctx.readPropertyBytesInto(dst, window, ctx.gfx.atoms.net_wm_icon_name, ctx.gfx.atoms.utf8_string)) |result| {
+            return result;
+        }
+        if (try ctx.readPropertyBytesInto(dst, window, ctx.gfx.atoms.net_wm_name, ctx.gfx.atoms.utf8_string)) |result| {
+            return result;
+        }
+        return try ctx.readPropertyBytesInto(dst, window, ctx.gfx.atoms.wm_name, c.AnyPropertyType);
     }
 
     pub fn readCardinalProperty(ctx: *const Context, window: c.Window, atom: c.Atom) !?u32 {
@@ -133,9 +139,7 @@ pub const Context = struct {
     pub fn readPropertyBytesInto(ctx: *const Context, dst: []u8, window: c.Window, atom: c.Atom, expected_type: c.Atom) !?[]const u8 {
         const prop = try ctx.getProperty(window, atom, 0, 4096, expected_type, 8) orelse return null;
         defer prop.deinit();
-        const len = @min(dst.len, prop.bytes.len);
-        @memcpy(dst[0..len], prop.bytes[0..len]);
-        return dst[0..len];
+        return utils.fillString(dst, prop.bytes);
     }
 
     pub fn hasAtomProperty(ctx: *const Context, window: c.Window, property_atom: c.Atom, expected_atom: c.Atom) !bool {

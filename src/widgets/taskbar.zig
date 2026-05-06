@@ -2,6 +2,7 @@ const std = @import("std");
 const cfg = @import("../config.zig");
 const common = @import("common.zig");
 const c = @import("../x11.zig").c;
+const utils = @import("../utils.zig");
 
 const max_title_len = 512;
 
@@ -58,13 +59,12 @@ pub const Taskbar = struct {
             if (desktop != current_desktop and desktop != 0xFFFFFFFF) continue;
             if (try ctx.hasAtomProperty(window, ctx.gfx.atoms.net_wm_window_type, ctx.gfx.atoms.net_wm_window_type_dock)) continue;
             if (try ctx.hasAtomProperty(window, ctx.gfx.atoms.net_wm_state, ctx.gfx.atoms.net_wm_state_skip_taskbar)) continue;
-            if (try ctx.hasAtomProperty(window, ctx.gfx.atoms.orcsome_state, ctx.gfx.atoms.orcsome_skip_taskbar)) continue;
 
             var entry = WindowEntry{
                 .window = window,
                 .desktop = desktop,
             };
-            const title = try ctx.readWindowTitleInto(&entry.title_buf, window);
+            const title = try ctx.readWindowTitleInto(&entry.title_buf, window) orelse utils.fillString(&entry.title_buf, "noname");
             entry.title_len = title.len;
             try self.windows.append(ctx.allocator, entry);
             if (window == reported_active_window) self.active_window = window;
@@ -85,9 +85,9 @@ pub const Taskbar = struct {
                 property.atom != ctx.gfx.atoms.net_active_window) return .{};
         } else if (property.atom != ctx.gfx.atoms.net_wm_name and
             property.atom != ctx.gfx.atoms.wm_name and
+            property.atom != ctx.gfx.atoms.net_wm_icon_name and
             property.atom != ctx.gfx.atoms.net_wm_desktop and
-            property.atom != ctx.gfx.atoms.net_wm_state and
-            property.atom != ctx.gfx.atoms.orcsome_state) return .{};
+            property.atom != ctx.gfx.atoms.net_wm_state) return .{};
 
         try self.refresh(ctx);
         return .{ .redraw = true };
@@ -112,7 +112,7 @@ pub const Taskbar = struct {
                 self.font,
                 if (window.window == self.active_window) self.style.active_text else self.style.text,
                 .{ .x = x + self.style.padding, .y = rect.y, .width = @max(0, draw_width - self.style.padding * 2), .height = rect.height },
-                if (window.title_len != 0) window.title() else "noname",
+                window.title(),
                 .left,
                 self.style.text_offset,
                 true,

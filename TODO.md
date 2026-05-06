@@ -4,3 +4,5 @@
 - Either implement `Taskbar.width = .min_content` properly or remove that mode from the public config. Right now `measureTaskbarMinWidth()` is a stub that returns `0`.
 - Narrow client-property refresh handling so title changes do not force `refreshDesktopState()` and a full window rescan on every update.
 - Clean up the text measurement/drawing API split so padding is handled more symmetrically. `textItemWidth()` currently bakes in padding while `drawText()` expects callers to account for padding explicitly.
+- refresh and tick should be combined to just update. handleEvent should return
+  need_update status.
