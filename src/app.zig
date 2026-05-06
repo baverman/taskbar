@@ -6,9 +6,18 @@ const common = @import("widgets/common.zig");
 const widget_mod = @import("widgets/widget.zig");
 const c = x11.c;
 
+const WidgetItem = struct {
+    widget: widget_mod.Widget,
+    config: cfg.Widget,
+    rect: common.Rect,
+    dirty: bool = true,
+    needs_update: bool = true,
+    next_update_at_ms: ?i64 = null,
+};
+
 pub const App = struct {
     ctx: common.Context,
-    layout: std.ArrayList(layout.LayoutItem),
+    widgets: std.ArrayList(WidgetItem),
     layout_dirty: bool,
 
     pub fn init(allocator: std.mem.Allocator, config: *const cfg.Config) !App {
@@ -21,7 +30,7 @@ pub const App = struct {
 
         var app = App{
             .ctx = undefined,
-            .layout = .{},
+            .widgets = .{},
             .layout_dirty = true,
         };
         app.ctx = .{
@@ -52,8 +61,8 @@ pub const App = struct {
     }
 
     pub fn deinit(app: *App) void {
-        for (app.layout.items) |*item| item.widget.deinit(&app.ctx);
-        app.layout.deinit(app.ctx.allocator);
+        for (app.widgets.items) |*item| item.widget.deinit(&app.ctx);
+        app.widgets.deinit(app.ctx.allocator);
         c.cairo_destroy(app.ctx.gfx.cairo);
         c.cairo_surface_destroy(app.ctx.gfx.cairo_surface);
         if (app.ctx.gfx.window != 0) _ = c.XDestroyWindow(app.ctx.gfx.display, app.ctx.gfx.window);
@@ -112,7 +121,7 @@ pub const App = struct {
 
     fn initLayout(app: *App) !void {
         for (app.ctx.config.widgets) |widget_cfg| {
-            try app.layout.append(app.ctx.allocator, .{
+            try app.widgets.append(app.ctx.allocator, .{
                 .widget = try widget_mod.Widget.initFromConfig(&app.ctx, app.ctx.config.style, widget_cfg),
                 .config = widget_cfg,
                 .rect = .{ .x = 0, .y = 0, .width = 0, .height = app.ctx.config.height },
@@ -181,7 +190,7 @@ pub const App = struct {
             });
         }
 
-        for (app.layout.items) |*item| {
+        for (app.widgets.items) |*item| {
             if (!item.dirty or item.rect.width <= 0) continue;
             app.ctx.fillRect(app.ctx.config.style.bg, item.rect);
             switch (item.widget) {
@@ -198,7 +207,7 @@ pub const App = struct {
             _ = c.XNextEvent(app.ctx.gfx.display, &event);
             switch (event.type) {
                 c.Expose => {
-                    for (app.layout.items) |*item| item.dirty = true;
+                    for (app.widgets.items) |*item| item.dirty = true;
                 },
                 else => try app.handleEvent(&event),
             }
@@ -206,7 +215,7 @@ pub const App = struct {
     }
 
     fn handleEvent(app: *App, event: *const c.XEvent) !void {
-        for (app.layout.items) |*item| {
+        for (app.widgets.items) |*item| {
             if (event.type == c.ButtonPress and
                 (event.xbutton.x < item.rect.x or event.xbutton.x > item.rect.x + item.rect.width))
             {
@@ -221,12 +230,13 @@ pub const App = struct {
     }
 
     fn relayout(app: *App) void {
-        layout.relayout(&app.ctx, app.ctx.panelWidth(), app.layout.items);
+        layout.relayout(&app.ctx, app.ctx.panelWidth(), app.widgets.items);
+        for (app.widgets.items) |*item| item.dirty = true;
         app.layout_dirty = false;
     }
 
     fn collectScheduledUpdates(app: *App) void {
-        for (app.layout.items) |*item| {
+        for (app.widgets.items) |*item| {
             const next_update_at_ms = item.next_update_at_ms orelse continue;
             if (next_update_at_ms > app.ctx.current_time_ms) continue;
             item.needs_update = true;
@@ -235,7 +245,7 @@ pub const App = struct {
     }
 
     fn processUpdates(app: *App) !void {
-        for (app.layout.items) |*item| {
+        for (app.widgets.items) |*item| {
             if (!item.needs_update) continue;
             item.needs_update = false;
             const status = switch (item.widget) {
@@ -245,13 +255,13 @@ pub const App = struct {
         }
     }
 
-    fn applyEventStatus(app: *App, item: *layout.LayoutItem, status: common.Status) void {
+    fn applyEventStatus(app: *App, item: *WidgetItem, status: common.Status) void {
         if (status.redraw) item.dirty = true;
         if (status.relayout) app.layout_dirty = true;
         if (status.update) item.needs_update = true;
     }
 
-    fn applyUpdateStatus(app: *App, item: *layout.LayoutItem, status: common.Status) void {
+    fn applyUpdateStatus(app: *App, item: *WidgetItem, status: common.Status) void {
         app.applyEventStatus(item, status);
         if (status.next_update_in_ms) |next_update_in_ms| {
             const next_update = app.ctx.current_time_ms + next_update_in_ms;
@@ -261,7 +271,7 @@ pub const App = struct {
 
     fn nextPollTimeoutMs(app: *const App) c_int {
         var min_timeout_ms: ?i64 = null;
-        for (app.layout.items) |*item| {
+        for (app.widgets.items) |*item| {
             const next_update_at_ms = item.next_update_at_ms orelse continue;
             const timeout_ms = @max(0, next_update_at_ms - app.ctx.current_time_ms);
             min_timeout_ms = if (min_timeout_ms) |current| @min(current, timeout_ms) else timeout_ms;

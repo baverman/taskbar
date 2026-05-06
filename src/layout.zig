@@ -1,17 +1,6 @@
-const cfg = @import("config.zig");
 const common = @import("widgets/common.zig");
-const widget_mod = @import("widgets/widget.zig");
 
-pub const LayoutItem = struct {
-    widget: widget_mod.Widget,
-    config: cfg.Widget,
-    rect: common.Rect,
-    dirty: bool = true,
-    needs_update: bool = true,
-    next_update_at_ms: ?i64 = null,
-};
-
-pub fn relayout(ctx: *const common.Context, total_width: i32, items: []LayoutItem) void {
+pub fn relayout(ctx: *const common.Context, total_width: i32, items: anytype) void {
     var flex_index: ?usize = null;
     var flex_x: i32 = 0;
     var x: i32 = 0;
@@ -32,7 +21,6 @@ pub fn relayout(ctx: *const common.Context, total_width: i32, items: []LayoutIte
             },
         };
 
-        item.dirty = true;
         item.rect = .{
             .x = x,
             .y = 0,

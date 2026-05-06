@@ -3,6 +3,30 @@ const cfg = @import("config.zig");
 const layout = @import("layout.zig");
 const common = @import("widgets/common.zig");
 
+const TestClock = struct {
+    pub fn measure(_: *TestClock, _: *const common.Context) i32 {
+        return 0;
+    }
+};
+
+const TestTaskbar = struct {
+    pub fn measure(_: *TestTaskbar, _: *const common.Context) i32 {
+        return 0;
+    }
+};
+
+const TestItem = struct {
+    widget: TestWidget,
+    config: cfg.Widget,
+    rect: common.Rect,
+    dirty: bool = false,
+};
+
+const TestWidget = union(enum) {
+    clock: TestClock,
+    taskbar: TestTaskbar,
+};
+
 fn testContext(config: *const cfg.Config) common.Context {
     return .{
         .allocator = undefined,
@@ -12,9 +36,9 @@ fn testContext(config: *const cfg.Config) common.Context {
     };
 }
 
-fn testItem(widget_cfg: cfg.Widget) layout.LayoutItem {
+fn testItem(widget_cfg: cfg.Widget) TestItem {
     return .{
-        .widget = .{ .clock = undefined },
+        .widget = .{ .clock = .{} },
         .config = widget_cfg,
         .rect = .{ .x = 0, .y = 0, .width = 0, .height = 0 },
         .dirty = false,
@@ -28,14 +52,14 @@ test "fixed items respect margins" {
         .widgets = &.{},
     };
     var ctx = testContext(&config);
-    var items = [_]layout.LayoutItem{
+    var items = [_]TestItem{
         testItem(.{ .clock = .{ .width = .{ .fixed = 20 }, .margin_left = 2, .margin_right = 3 } }),
         testItem(.{ .clock = .{ .width = .{ .fixed = 10 }, .margin_left = 4, .margin_right = 1 } }),
     };
 
     layout.relayout(&ctx, 100, &items);
 
-    try std.testing.expect(items[0].dirty);
+    try std.testing.expect(!items[0].dirty);
     try std.testing.expectEqual(common.Rect{ .x = 2, .y = 0, .width = 20, .height = 29 }, items[0].rect);
     try std.testing.expectEqual(common.Rect{ .x = 29, .y = 0, .width = 10, .height = 29 }, items[1].rect);
 }
@@ -47,9 +71,13 @@ test "flex item consumes remaining width and shifts following items" {
         .widgets = &.{},
     };
     var ctx = testContext(&config);
-    var items = [_]layout.LayoutItem{
+    var items = [_]TestItem{
         testItem(.{ .clock = .{ .width = .{ .fixed = 20 }, .margin_right = 5 } }),
-        testItem(.{ .taskbar = .{ .width = .flex, .margin_left = 3, .margin_right = 7 } }),
+        .{
+            .widget = .{ .taskbar = .{} },
+            .config = .{ .taskbar = .{ .width = .flex, .margin_left = 3, .margin_right = 7 } },
+            .rect = .{ .x = 0, .y = 0, .width = 0, .height = 0 },
+        },
         testItem(.{ .clock = .{ .width = .{ .fixed = 15 }, .margin_left = 2 } }),
     };
 
@@ -67,7 +95,7 @@ test "zero width fixed item does not consume margins" {
         .widgets = &.{},
     };
     var ctx = testContext(&config);
-    var items = [_]layout.LayoutItem{
+    var items = [_]TestItem{
         testItem(.{ .clock = .{ .width = .{ .fixed = 0 }, .margin_left = 10, .margin_right = 10 } }),
         testItem(.{ .clock = .{ .width = .{ .fixed = 20 } } }),
     };
@@ -85,9 +113,17 @@ test "last flex wins" {
         .widgets = &.{},
     };
     var ctx = testContext(&config);
-    var items = [_]layout.LayoutItem{
-        testItem(.{ .taskbar = .{ .width = .flex } }),
-        testItem(.{ .taskbar = .{ .width = .flex } }),
+    var items = [_]TestItem{
+        .{
+            .widget = .{ .taskbar = .{} },
+            .config = .{ .taskbar = .{ .width = .flex } },
+            .rect = .{ .x = 0, .y = 0, .width = 0, .height = 0 },
+        },
+        .{
+            .widget = .{ .taskbar = .{} },
+            .config = .{ .taskbar = .{ .width = .flex } },
+            .rect = .{ .x = 0, .y = 0, .width = 0, .height = 0 },
+        },
     };
 
     layout.relayout(&ctx, 100, &items);
