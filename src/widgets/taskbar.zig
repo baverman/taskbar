@@ -40,7 +40,7 @@ pub const Taskbar = struct {
         c.pango_font_description_free(self.font);
     }
 
-    pub fn refresh(self: *Taskbar, ctx: *const common.Context) !void {
+    pub fn update(self: *Taskbar, ctx: *const common.Context) !common.Status {
         self.windows.clearRetainingCapacity();
 
         const current_desktop = try ctx.readCardinalProperty(ctx.gfx.root, ctx.gfx.atoms.net_current_desktop) orelse 0;
@@ -69,28 +69,33 @@ pub const Taskbar = struct {
             try self.windows.append(ctx.allocator, entry);
             if (window == reported_active_window) self.active_window = window;
         }
+        return .{ .redraw = true };
     }
 
-    pub fn start(_: *Taskbar, _: *const common.Context) !void {}
-
-    pub fn handleEvent(self: *Taskbar, ctx: *const common.Context, rect: common.Rect, event: *const c.XEvent) !common.Update {
-        _ = rect;
-        if (event.type != c.PropertyNotify) return .{};
-        const property = event.xproperty;
-        if (property.window == ctx.gfx.window) return .{};
-        if (property.window == ctx.gfx.root) {
-            if (property.atom != ctx.gfx.atoms.net_current_desktop and
-                property.atom != ctx.gfx.atoms.net_client_list and
-                property.atom != ctx.gfx.atoms.net_client_list_stacking and
-                property.atom != ctx.gfx.atoms.net_active_window) return .{};
-        } else if (property.atom != ctx.gfx.atoms.net_wm_name and
-            property.atom != ctx.gfx.atoms.wm_name and
-            property.atom != ctx.gfx.atoms.net_wm_icon_name and
-            property.atom != ctx.gfx.atoms.net_wm_desktop and
-            property.atom != ctx.gfx.atoms.net_wm_state) return .{};
-
-        try self.refresh(ctx);
-        return .{ .redraw = true };
+    pub fn handleEvent(self: *Taskbar, ctx: *const common.Context, rect: common.Rect, event: *const c.XEvent) !common.Status {
+        switch (event.type) {
+            c.PropertyNotify => {
+                const property = event.xproperty;
+                if (property.window == ctx.gfx.window) return .{};
+                if (property.window == ctx.gfx.root) {
+                    if (property.atom != ctx.gfx.atoms.net_current_desktop and
+                        property.atom != ctx.gfx.atoms.net_client_list and
+                        property.atom != ctx.gfx.atoms.net_active_window) return .{};
+                } else if (property.atom != ctx.gfx.atoms.net_wm_name and
+                    property.atom != ctx.gfx.atoms.wm_name and
+                    property.atom != ctx.gfx.atoms.net_wm_icon_name and
+                    property.atom != ctx.gfx.atoms.net_wm_desktop and
+                    property.atom != ctx.gfx.atoms.net_wm_state) return .{};
+                return .{ .update = true };
+            },
+            c.ButtonPress => {
+                const x = event.xbutton.x;
+                const y = event.xbutton.y;
+                if (y < 0 or y > ctx.config.height) return .{};
+                return self.handleButtonPress(ctx, rect, @intCast(x), @intCast(y));
+            },
+            else => return .{},
+        }
     }
 
     pub fn measure(self: *const Taskbar, ctx: *const common.Context) i32 {
@@ -121,8 +126,7 @@ pub const Taskbar = struct {
         }
     }
 
-    pub fn click(self: *Taskbar, ctx: *const common.Context, rect: common.Rect, x: i32, y: i32) common.Update {
-        _ = y;
+    fn handleButtonPress(self: *Taskbar, ctx: *const common.Context, rect: common.Rect, x: i32, _: i32) common.Status {
         const width = self.itemWidth(rect.width);
         var left = rect.x;
         for (self.windows.items, 0..) |window, idx| {
@@ -133,10 +137,6 @@ pub const Taskbar = struct {
             }
             left += draw_width;
         }
-        return .{};
-    }
-
-    pub fn tick(_: *Taskbar, _: *const common.Context) common.Update {
         return .{};
     }
 

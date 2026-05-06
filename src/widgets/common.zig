@@ -11,9 +11,11 @@ pub const Rect = struct {
     height: i32,
 };
 
-pub const Update = packed struct {
+pub const Status = struct {
     redraw: bool = false,
     relayout: bool = false,
+    update: bool = false,
+    next_update_in_ms: ?i64 = null,
 };
 
 pub const Gfx = struct {
@@ -31,6 +33,7 @@ pub const Context = struct {
     allocator: std.mem.Allocator,
     config: *const cfg.Config,
     gfx: Gfx,
+    current_time_ms: i64,
 
     pub fn panelWidth(ctx: *const Context) i32 {
         return c.XDisplayWidth(ctx.gfx.display, ctx.gfx.screen_num);
@@ -160,6 +163,7 @@ pub const Context = struct {
         x11.sendClientMessage(
             ctx.gfx.display,
             ctx.gfx.root,
+            ctx.gfx.root,
             ctx.gfx.atoms.net_current_desktop,
             c.SubstructureRedirectMask | c.SubstructureNotifyMask,
             .{ index, c.CurrentTime, 0, 0, 0 },
@@ -170,6 +174,7 @@ pub const Context = struct {
     pub fn activateWindow(ctx: *const Context, window: c.Window) void {
         x11.sendClientMessage(
             ctx.gfx.display,
+            ctx.gfx.root,
             window,
             ctx.gfx.atoms.net_active_window,
             c.SubstructureRedirectMask | c.SubstructureNotifyMask,

@@ -1,3 +1,4 @@
+const std = @import("std");
 const cfg = @import("../config.zig");
 const common = @import("common.zig");
 const x11 = @import("../x11.zig");
@@ -28,17 +29,12 @@ pub const Clock = struct {
         c.pango_font_description_free(self.font);
     }
 
-    pub fn refresh(self: *Clock, ctx: *const common.Context) !void {
-        _ = self.update(ctx);
-    }
-
-    pub fn start(_: *Clock, _: *const common.Context) !void {}
-
-    pub fn tick(self: *Clock, ctx: *const common.Context) common.Update {
-        if (!self.update(ctx)) return .{};
-        return switch (self.config.width) {
-            .min_content => .{ .redraw = true, .relayout = true },
-            else => .{ .redraw = true },
+    pub fn update(self: *Clock, ctx: *const common.Context) !common.Status {
+        const changed = self.refreshText(ctx);
+        return .{
+            .redraw = changed,
+            .relayout = changed and self.config.width == .min_content,
+            .next_update_in_ms = nextUpdateInMs(ctx),
         };
     }
 
@@ -60,18 +56,13 @@ pub const Clock = struct {
         );
     }
 
-    pub fn handleEvent(_: *Clock, _: *const common.Context, _: common.Rect, _: *const c.XEvent) !common.Update {
+    pub fn handleEvent(_: *Clock, _: *const common.Context, _: common.Rect, _: *const c.XEvent) !common.Status {
         return .{};
     }
 
-    pub fn click(_: *Clock, _: *const common.Context, _: common.Rect, _: i32, _: i32) common.Update {
-        return .{};
-    }
-
-    fn update(self: *Clock, ctx: *const common.Context) bool {
-        _ = ctx;
-        const now: c.time_t = c.time(null);
-        const now_i64: i64 = @intCast(now);
+    fn refreshText(self: *Clock, ctx: *const common.Context) bool {
+        const now_i64 = @divFloor(ctx.current_time_ms, std.time.ms_per_s);
+        const now: c.time_t = @intCast(now_i64);
         const now_minute = @divFloor(now_i64, 60);
         if (now_minute == self.last_clock_minute) return false;
 
@@ -84,3 +75,8 @@ pub const Clock = struct {
         return true;
     }
 };
+
+fn nextUpdateInMs(ctx: *const common.Context) i64 {
+    const minute_ms = std.time.ms_per_min;
+    return ((@divFloor(ctx.current_time_ms, minute_ms) + 1) * minute_ms) - ctx.current_time_ms;
+}

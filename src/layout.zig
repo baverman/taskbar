@@ -7,6 +7,8 @@ pub const LayoutItem = struct {
     config: cfg.Widget,
     rect: common.Rect,
     dirty: bool = true,
+    needs_update: bool = true,
+    next_update_at_ms: ?i64 = null,
 };
 
 pub fn relayout(ctx: *const common.Context, total_width: i32, items: []LayoutItem) void {

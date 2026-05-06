@@ -27,6 +27,7 @@ pub const App = struct {
         app.ctx = .{
             .allocator = allocator,
             .config = config,
+            .current_time_ms = std.time.milliTimestamp(),
             .gfx = .{
                 .display = display,
                 .screen_num = screen_num,
@@ -42,12 +43,11 @@ pub const App = struct {
         try app.createWindow();
         try app.createGraphics();
         try app.initLayout();
-        try app.refreshLayoutWidgets();
+
         app.setDockProperties();
         app.subscribeRootChanges();
-        try app.startWidgets();
         app.mapWindow();
-        app.redraw();
+
         return app;
     }
 
@@ -69,19 +69,16 @@ pub const App = struct {
         }};
 
         while (true) {
+            app.ctx.current_time_ms = std.time.milliTimestamp();
             try app.processPendingEvents();
-            for (app.layout.items) |*item| {
-                const update = switch (item.widget) {
-                    inline else => |*w| w.tick(&app.ctx),
-                };
-                if (update.redraw) item.dirty = true;
-                if (update.relayout) app.layout_dirty = true;
-            }
-
+            app.collectScheduledUpdates();
+            try app.processUpdates();
             app.redraw();
 
-            const timeout_ms = nextClockTimeoutMs();
-            _ = try std.posix.poll(&pollfd, timeout_ms);
+            if (c.XPending(app.ctx.gfx.display) == 0) {
+                const timeout_ms = app.nextPollTimeoutMs();
+                _ = try std.posix.poll(&pollfd, timeout_ms);
+            }
         }
     }
 
@@ -120,20 +117,10 @@ pub const App = struct {
                 .config = widget_cfg,
                 .rect = .{ .x = 0, .y = 0, .width = 0, .height = app.ctx.config.height },
                 .dirty = true,
+                .needs_update = true,
+                .next_update_at_ms = null,
             });
         }
-    }
-
-    fn refreshLayoutWidgets(app: *App) !void {
-        for (app.layout.items) |*item| switch (item.widget) {
-            inline else => |*w| try w.refresh(&app.ctx),
-        };
-    }
-
-    fn startWidgets(app: *App) !void {
-        for (app.layout.items) |*item| switch (item.widget) {
-            inline else => |*w| try w.start(&app.ctx),
-        };
     }
 
     fn mapWindow(app: *App) void {
@@ -213,32 +200,23 @@ pub const App = struct {
                 c.Expose => {
                     for (app.layout.items) |*item| item.dirty = true;
                 },
-                c.ButtonPress => try app.handleClick(@intCast(event.xbutton.x), @intCast(event.xbutton.y)),
                 else => try app.handleEvent(&event),
             }
         }
     }
 
-    fn handleClick(app: *App, x: i32, y: i32) !void {
-        if (y < 0 or y > app.ctx.config.height) return;
-        for (app.layout.items) |*item| {
-            if (x < item.rect.x or x > item.rect.x + item.rect.width) continue;
-            const update = switch (item.widget) {
-                inline else => |*w| w.click(&app.ctx, item.rect, x, y),
-            };
-            if (update.redraw) item.dirty = true;
-            if (update.relayout) app.layout_dirty = true;
-            return;
-        }
-    }
-
     fn handleEvent(app: *App, event: *const c.XEvent) !void {
         for (app.layout.items) |*item| {
-            const update = switch (item.widget) {
+            if (event.type == c.ButtonPress and
+                (event.xbutton.x < item.rect.x or event.xbutton.x > item.rect.x + item.rect.width))
+            {
+                continue;
+            }
+            const status = switch (item.widget) {
                 inline else => |*w| try w.handleEvent(&app.ctx, item.rect, event),
             };
-            if (update.redraw) item.dirty = true;
-            if (update.relayout) app.layout_dirty = true;
+            app.applyEventStatus(item, status);
+            if (event.type == c.ButtonPress) return;
         }
     }
 
@@ -246,10 +224,51 @@ pub const App = struct {
         layout.relayout(&app.ctx, app.ctx.panelWidth(), app.layout.items);
         app.layout_dirty = false;
     }
-};
 
-fn nextClockTimeoutMs() c_int {
-    const now: i64 = @intCast(c.time(null));
-    const next_minute = ((@divFloor(now, 60) + 1) * 60);
-    return @intCast(@max(0, next_minute - now) * 1000);
-}
+    fn collectScheduledUpdates(app: *App) void {
+        for (app.layout.items) |*item| {
+            const next_update_at_ms = item.next_update_at_ms orelse continue;
+            if (next_update_at_ms > app.ctx.current_time_ms) continue;
+            item.needs_update = true;
+            item.next_update_at_ms = null;
+        }
+    }
+
+    fn processUpdates(app: *App) !void {
+        for (app.layout.items) |*item| {
+            if (!item.needs_update) continue;
+            item.needs_update = false;
+            const status = switch (item.widget) {
+                inline else => |*w| try w.update(&app.ctx),
+            };
+            app.applyUpdateStatus(item, status);
+        }
+    }
+
+    fn applyEventStatus(app: *App, item: *layout.LayoutItem, status: common.Status) void {
+        if (status.redraw) item.dirty = true;
+        if (status.relayout) app.layout_dirty = true;
+        if (status.update) item.needs_update = true;
+    }
+
+    fn applyUpdateStatus(app: *App, item: *layout.LayoutItem, status: common.Status) void {
+        app.applyEventStatus(item, status);
+        if (status.next_update_in_ms) |next_update_in_ms| {
+            const next_update = app.ctx.current_time_ms + next_update_in_ms;
+            item.next_update_at_ms = @min(next_update, item.next_update_at_ms orelse next_update);
+        }
+    }
+
+    fn nextPollTimeoutMs(app: *const App) c_int {
+        var min_timeout_ms: ?i64 = null;
+        for (app.layout.items) |*item| {
+            const next_update_at_ms = item.next_update_at_ms orelse continue;
+            const timeout_ms = @max(0, next_update_at_ms - app.ctx.current_time_ms);
+            min_timeout_ms = if (min_timeout_ms) |current| @min(current, timeout_ms) else timeout_ms;
+        }
+        return if (min_timeout_ms) |timeout_ms|
+            @intCast(@min(timeout_ms, std.math.maxInt(c_int)))
+        else
+            -1;
+    }
+};

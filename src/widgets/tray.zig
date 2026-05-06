@@ -24,6 +24,7 @@ pub const Tray = struct {
     xembed_atom: c.Atom,
     xembed_info_atom: c.Atom,
     manager_atom: c.Atom,
+    started: bool,
 
     pub fn init(ctx: *const common.Context, base_style: cfg.Style, config: cfg.Tray) Tray {
         return .{
@@ -37,6 +38,7 @@ pub const Tray = struct {
             .xembed_atom = ctx.gfx.atoms.xembed,
             .xembed_info_atom = ctx.gfx.atoms.xembed_info,
             .manager_atom = ctx.gfx.atoms.manager,
+            .started = false,
         };
     }
 
@@ -45,9 +47,8 @@ pub const Tray = struct {
         self.icons.deinit(self.allocator);
     }
 
-    pub fn refresh(_: *Tray, _: *const common.Context) !void {}
-
-    pub fn start(self: *Tray, ctx: *const common.Context) !void {
+    pub fn update(self: *Tray, ctx: *const common.Context) !common.Status {
+        if (self.started) return .{};
         _ = c.XSetSelectionOwner(ctx.gfx.display, self.selection_atom, self.owner_window, c.CurrentTime);
         if (c.XGetSelectionOwner(ctx.gfx.display, self.selection_atom) != self.owner_window) {
             return error.TraySelectionUnavailable;
@@ -56,11 +57,14 @@ pub const Tray = struct {
         x11.sendClientMessage(
             ctx.gfx.display,
             ctx.gfx.root,
+            ctx.gfx.root,
             self.manager_atom,
             c.StructureNotifyMask,
             .{ c.CurrentTime, @intCast(self.selection_atom), @intCast(self.owner_window), 0, 0 },
         );
         _ = c.XFlush(ctx.gfx.display);
+        self.started = true;
+        return .{};
     }
 
     pub fn measure(self: *const Tray, ctx: *const common.Context) i32 {
@@ -71,7 +75,7 @@ pub const Tray = struct {
         self.relayout(ctx.gfx.display, rect.x, trayY(), iconSize(self, ctx), self.config.item_gap);
     }
 
-    pub fn handleEvent(self: *Tray, ctx: *const common.Context, rect: common.Rect, event: *const c.XEvent) !common.Update {
+    pub fn handleEvent(self: *Tray, ctx: *const common.Context, rect: common.Rect, event: *const c.XEvent) !common.Status {
         switch (event.type) {
             c.ClientMessage => {
                 if (!self.isDockRequest(&event.xclient)) return .{};
@@ -89,14 +93,6 @@ pub const Tray = struct {
             },
             else => return .{},
         }
-    }
-
-    pub fn click(_: *Tray, _: *const common.Context, _: common.Rect, _: i32, _: i32) common.Update {
-        return .{};
-    }
-
-    pub fn tick(_: *Tray, _: *const common.Context) common.Update {
-        return .{};
     }
 
     fn widthFor(self: *const Tray, icon_size: i32, item_gap: i32) i32 {
@@ -175,6 +171,7 @@ pub const Tray = struct {
     fn sendXEmbedEmbeddedNotify(self: *Tray, display: *c.Display, icon_window: c.Window) void {
         x11.sendClientMessage(
             display,
+            icon_window,
             icon_window,
             self.xembed_atom,
             c.NoEventMask,

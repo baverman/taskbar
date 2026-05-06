@@ -44,7 +44,10 @@ pub const Pager = struct {
         c.pango_font_description_free(self.font);
     }
 
-    pub fn refresh(self: *Pager, ctx: *const common.Context) !void {
+    pub fn update(self: *Pager, ctx: *const common.Context) !common.Status {
+        var old_width: i32 = 0;
+        for (self.desktops.items) |desktop| old_width += desktop.title_width;
+
         self.desktops.clearRetainingCapacity();
 
         const desktop_count = try ctx.readCardinalProperty(ctx.gfx.root, ctx.gfx.atoms.net_number_of_desktops) orelse 1;
@@ -62,23 +65,30 @@ pub const Pager = struct {
             var fallback_buf: [max_fallback_name_len]u8 = undefined;
             desktop.title_width = ctx.textItemWidth(self.font, desktop.title(&fallback_buf), self.style.padding);
         }
-    }
-
-    pub fn start(_: *Pager, _: *const common.Context) !void {}
-
-    pub fn handleEvent(self: *Pager, ctx: *const common.Context, rect: common.Rect, event: *const c.XEvent) !common.Update {
-        _ = rect;
-        if (event.type != c.PropertyNotify) return .{};
-        const property = event.xproperty;
-        if (property.window != ctx.gfx.root) return .{};
-        if (property.atom != ctx.gfx.atoms.net_current_desktop and
-            property.atom != ctx.gfx.atoms.net_number_of_desktops and
-            property.atom != ctx.gfx.atoms.net_desktop_names) return .{};
-        try self.refresh(ctx);
         return .{
             .redraw = true,
-            .relayout = property.atom != ctx.gfx.atoms.net_current_desktop,
+            .relayout = old_width != self.measure(ctx),
         };
+    }
+
+    pub fn handleEvent(self: *Pager, ctx: *const common.Context, rect: common.Rect, event: *const c.XEvent) !common.Status {
+        switch (event.type) {
+            c.PropertyNotify => {
+                const property = event.xproperty;
+                if (property.window != ctx.gfx.root) return .{};
+                if (property.atom != ctx.gfx.atoms.net_current_desktop and
+                    property.atom != ctx.gfx.atoms.net_number_of_desktops and
+                    property.atom != ctx.gfx.atoms.net_desktop_names) return .{};
+                return .{ .update = true };
+            },
+            c.ButtonPress => {
+                const x = event.xbutton.x;
+                const y = event.xbutton.y;
+                if (y < 0 or y > ctx.config.height) return .{};
+                return self.handleButtonPress(ctx, rect, @intCast(x), @intCast(y));
+            },
+            else => return .{},
+        }
     }
 
     pub fn measure(self: *const Pager, ctx: *const common.Context) i32 {
@@ -110,7 +120,7 @@ pub const Pager = struct {
         }
     }
 
-    pub fn click(self: *Pager, ctx: *const common.Context, rect: common.Rect, x: i32, y: i32) common.Update {
+    fn handleButtonPress(self: *Pager, ctx: *const common.Context, rect: common.Rect, x: i32, y: i32) common.Status {
         _ = y;
         var left = rect.x;
         for (self.desktops.items) |desktop| {
@@ -121,10 +131,6 @@ pub const Pager = struct {
             }
             left += width;
         }
-        return .{};
-    }
-
-    pub fn tick(_: *Pager, _: *const common.Context) common.Update {
         return .{};
     }
 };

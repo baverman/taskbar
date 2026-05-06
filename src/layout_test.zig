@@ -8,6 +8,7 @@ fn testContext(config: *const cfg.Config) common.Context {
         .allocator = undefined,
         .config = config,
         .gfx = undefined,
+        .current_time_ms = 0,
     };
 }
 

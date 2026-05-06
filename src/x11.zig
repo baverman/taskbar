@@ -89,10 +89,10 @@ pub fn internAtoms(display: *c.Display) Atoms {
     };
 }
 
-pub fn sendClientMessage(display: *c.Display, target: c.Window, message_type: c.Atom, event_mask: c_long, data: [5]c_long) void {
+pub fn sendClientMessage(display: *c.Display, target: c.Window, window: c.Window, message_type: c.Atom, event_mask: c_long, data: [5]c_long) void {
     var event = std.mem.zeroes(c.XEvent);
     event.xclient.type = c.ClientMessage;
-    event.xclient.window = target;
+    event.xclient.window = window;
     event.xclient.message_type = message_type;
     event.xclient.format = 32;
     event.xclient.data.l = data;
