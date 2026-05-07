@@ -45,6 +45,7 @@ pub const App = struct {
                 .visual = null,
                 .cairo_surface = undefined,
                 .cairo = undefined,
+                .pango_layout = undefined,
                 .atoms = atoms,
             },
         };
@@ -63,6 +64,7 @@ pub const App = struct {
     pub fn deinit(app: *App) void {
         for (app.widgets.items) |*item| item.widget.deinit(&app.ctx);
         app.widgets.deinit(app.ctx.allocator);
+        c.g_object_unref(app.ctx.gfx.pango_layout);
         c.cairo_destroy(app.ctx.gfx.cairo);
         c.cairo_surface_destroy(app.ctx.gfx.cairo_surface);
         if (app.ctx.gfx.window != 0) _ = c.XDestroyWindow(app.ctx.gfx.display, app.ctx.gfx.window);
@@ -117,6 +119,7 @@ pub const App = struct {
             app.ctx.config.height,
         ) orelse return error.CairoSurfaceCreateFailed;
         app.ctx.gfx.cairo = c.cairo_create(app.ctx.gfx.cairo_surface) orelse return error.CairoCreateFailed;
+        app.ctx.gfx.pango_layout = c.pango_cairo_create_layout(app.ctx.gfx.cairo) orelse return error.PangoLayoutCreateFailed;
     }
 
     fn initLayout(app: *App) !void {

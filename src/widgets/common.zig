@@ -26,6 +26,7 @@ pub const Gfx = struct {
     visual: ?*c.Visual,
     cairo_surface: *c.cairo_surface_t,
     cairo: *c.cairo_t,
+    pango_layout: *c.PangoLayout,
     atoms: x11.Atoms,
 };
 
@@ -54,10 +55,12 @@ pub const Context = struct {
 
     pub fn measureText(ctx: *const Context, font: *c.PangoFontDescription, text: []const u8) i32 {
         if (text.len == 0) return 0;
-        const layout = c.pango_cairo_create_layout(ctx.gfx.cairo) orelse return 0;
-        defer c.g_object_unref(layout);
+        const layout = ctx.gfx.pango_layout;
         c.pango_layout_set_font_description(layout, font);
         c.pango_layout_set_text(layout, text.ptr, @intCast(text.len));
+        c.pango_layout_set_width(layout, -1);
+        c.pango_layout_set_alignment(layout, c.PANGO_ALIGN_LEFT);
+        c.pango_layout_set_ellipsize(layout, c.PANGO_ELLIPSIZE_NONE);
         var width: c_int = 0;
         var height: c_int = 0;
         c.pango_layout_get_pixel_size(layout, &width, &height);
@@ -79,9 +82,7 @@ pub const Context = struct {
         ellipsize: bool,
     ) void {
         if (text.len == 0 or rect.width <= 0 or rect.height <= 0) return;
-        const layout = c.pango_cairo_create_layout(ctx.gfx.cairo) orelse return;
-        defer c.g_object_unref(layout);
-
+        const layout = ctx.gfx.pango_layout;
         c.pango_layout_set_font_description(layout, font);
         c.pango_layout_set_text(layout, text.ptr, @intCast(text.len));
         c.pango_layout_set_width(layout, rect.width * c.PANGO_SCALE);
