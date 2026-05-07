@@ -23,6 +23,7 @@ pub const Taskbar = struct {
     font: *c.PangoFontDescription,
     windows: std.ArrayList(WindowEntry),
     active_window: c.Window,
+    windows_buf: []c.Window,
 
     pub fn init(ctx: *const common.Context, base_style: cfg.Style, config: cfg.Taskbar) !Taskbar {
         const style = common.resolveStyle(base_style, config.style);
@@ -32,11 +33,13 @@ pub const Taskbar = struct {
             .font = try ctx.openFont(style.font),
             .windows = .{},
             .active_window = 0,
+            .windows_buf = try ctx.allocator.alloc(c.Window, 1024),
         };
     }
 
     pub fn deinit(self: *Taskbar, ctx: *const common.Context) void {
         self.windows.deinit(ctx.allocator);
+        ctx.allocator.free(self.windows_buf);
         c.pango_font_description_free(self.font);
     }
 
@@ -47,10 +50,8 @@ pub const Taskbar = struct {
         const reported_active_window = try ctx.readWindowProperty(ctx.gfx.root, ctx.gfx.atoms.net_active_window) orelse 0;
         self.active_window = 0;
 
-        const windows = try ctx.readWindowListProperty(ctx.gfx.root, ctx.gfx.atoms.net_client_list) orelse
-            try ctx.readWindowListProperty(ctx.gfx.root, ctx.gfx.atoms.net_client_list_stacking) orelse
+        const windows = try ctx.readWindowListPropertyInto(self.windows_buf, ctx.gfx.root, ctx.gfx.atoms.net_client_list) orelse
             &.{};
-        defer if (windows.len != 0) ctx.allocator.free(windows);
 
         for (windows) |window| {
             if (window == ctx.gfx.window) continue;

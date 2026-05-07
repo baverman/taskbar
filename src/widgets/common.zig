@@ -130,13 +130,12 @@ pub const Context = struct {
         return values[0];
     }
 
-    pub fn readWindowListProperty(ctx: *const Context, window: c.Window, atom: c.Atom) !?[]c.Window {
+    pub fn readWindowListPropertyInto(ctx: *const Context, dst: []c.Window, window: c.Window, atom: c.Atom) !?[]c.Window {
         const prop = try ctx.getProperty(window, atom, 0, 4096, c.XA_WINDOW, 32) orelse return null;
         defer prop.deinit();
         const values: [*]const c_ulong = @ptrCast(@alignCast(prop.bytes.ptr));
-        const owned = try ctx.allocator.alloc(c.Window, prop.nitems);
-        for (owned, 0..) |*dst, idx| dst.* = values[idx];
-        return owned;
+        @memcpy(dst[0..prop.nitems], values);
+        return dst[0..prop.nitems];
     }
 
     pub fn readPropertyBytesInto(ctx: *const Context, dst: []u8, window: c.Window, atom: c.Atom, expected_type: c.Atom) !?[]const u8 {
