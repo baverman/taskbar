@@ -2,3 +2,4 @@
 /zig-release
 /.zig-cache
 /.codex
+/zig-pkg

@@ -32,7 +32,7 @@ pub const Pager = struct {
             .config = config,
             .style = style,
             .font = try ctx.openFont(style.font),
-            .desktops = .{},
+            .desktops = .empty,
             .names_buf = try ctx.allocator.alloc(u8, max_names_len),
             .current_desktop = 0,
         };

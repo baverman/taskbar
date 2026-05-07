@@ -1,0 +1,12 @@
+.{
+    .name = .taskbar,
+    .version = "0.16.0",
+    .dependencies = .{
+        .translate_c = .{
+            .url = "git+https://codeberg.org/ziglang/translate-c?ref=zig-0.16.x#42f630117deffd5318b4a6ceffbd366dd0af8cee",
+            .hash = "translate_c-1.0.0-Q_BUWo75BgBmrtWsRz9QVUZlzvsSUUe_IIXD9vmWguhX",
+        },
+    },
+    .paths = .{""},
+    .fingerprint = 0x9d08481ccb1a46d1,
+}

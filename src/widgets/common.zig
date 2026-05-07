@@ -32,6 +32,7 @@ pub const Gfx = struct {
 
 pub const Context = struct {
     allocator: std.mem.Allocator,
+    io: std.Io,
     config: *const cfg.Config,
     gfx: Gfx,
     current_time_ms: i64,

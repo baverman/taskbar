@@ -30,6 +30,7 @@ const TestWidget = union(enum) {
 fn testContext(config: *const cfg.Config) common.Context {
     return .{
         .allocator = undefined,
+        .io = std.testing.io,
         .config = config,
         .gfx = undefined,
         .current_time_ms = 0,

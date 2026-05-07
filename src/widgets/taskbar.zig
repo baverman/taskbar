@@ -1,7 +1,8 @@
 const std = @import("std");
 const cfg = @import("../config.zig");
 const common = @import("common.zig");
-const c = @import("../x11.zig").c;
+const x11 = @import("../x11.zig");
+const c = x11.c;
 const utils = @import("../utils.zig");
 
 const max_title_len = 512;
@@ -31,7 +32,7 @@ pub const Taskbar = struct {
             .config = config,
             .style = style,
             .font = try ctx.openFont(style.font),
-            .windows = .{},
+            .windows = .empty,
             .active_window = 0,
             .windows_buf = try ctx.allocator.alloc(c.Window, 1024),
         };

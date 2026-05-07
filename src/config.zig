@@ -116,47 +116,44 @@ pub fn defaultConfig() Config {
     };
 }
 
-pub fn load(allocator: std.mem.Allocator) !Config {
-    const path = try findConfigPath(allocator);
-    const config_path = path orelse return defaultConfig();
-    defer allocator.free(config_path);
+pub fn load(allocator: std.mem.Allocator, io: std.Io, environ_map: *const std.process.Environ.Map) !Config {
+    var scratch_mem: [16 * 1024]u8 = undefined;
+    var scratch_fba = std.heap.FixedBufferAllocator.init(&scratch_mem);
+    const scratch = scratch_fba.allocator();
 
-    const file = std.fs.openFileAbsolute(config_path, .{}) catch |err| switch (err) {
+    const path = try findConfigPath(scratch, environ_map);
+    const config_path = path orelse return defaultConfig();
+
+    var source_buf: [64 * 1024:0]u8 = undefined;
+    const source = std.Io.Dir.cwd().readFile(io, config_path, source_buf[0..]) catch |err| switch (err) {
         error.FileNotFound => return defaultConfig(),
         else => return err,
     };
-    defer file.close();
-
-    const source = try file.readToEndAllocOptions(
-        allocator,
-        std.math.maxInt(usize),
-        null,
-        .of(u8),
-        0,
-    );
-    defer allocator.free(source);
+    source_buf[source.len] = 0;
+    const source_z: [:0]u8 = source_buf[0..source.len :0];
 
     var diag: std.zon.parse.Diagnostics = .{};
     defer diag.deinit(allocator);
 
-    return std.zon.parse.fromSlice(Config, allocator, source, &diag, .{
+    return std.zon.parse.fromSliceAlloc(Config, allocator, source_z, &diag, .{
         .free_on_error = false,
     }) catch |err| switch (err) {
         error.ParseZon => {
             std.debug.print("failed to parse config {s}\n", .{config_path});
-            var stderr_writer = std.fs.File.stderr().writer(&.{});
-            diag.format(&stderr_writer.interface) catch {};
+            var stderr = std.debug.lockStderr(&.{}).file_writer.interface;
+            defer std.debug.unlockStderr();
+            diag.format(&stderr) catch {};
             return error.ParseZon;
         },
         else => return err,
     };
 }
 
-fn findConfigPath(allocator: std.mem.Allocator) !?[]const u8 {
-    if (std.posix.getenv("XDG_CONFIG_HOME")) |xdg| {
+fn findConfigPath(allocator: std.mem.Allocator, environ_map: *const std.process.Environ.Map) !?[]const u8 {
+    if (environ_map.get("XDG_CONFIG_HOME")) |xdg| {
         return try std.fs.path.join(allocator, &.{ xdg, "taskbar.zon" });
     }
-    if (std.posix.getenv("HOME")) |home| {
+    if (environ_map.get("HOME")) |home| {
         return try std.fs.path.join(allocator, &.{ home, ".config", "taskbar.zon" });
     }
     return null;

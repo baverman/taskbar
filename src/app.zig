@@ -20,7 +20,7 @@ pub const App = struct {
     widgets: std.ArrayList(WidgetItem),
     layout_dirty: bool,
 
-    pub fn init(allocator: std.mem.Allocator, config: *const cfg.Config) !App {
+    pub fn init(allocator: std.mem.Allocator, io: std.Io, config: *const cfg.Config) !App {
         const display = c.XOpenDisplay(null) orelse return error.XOpenDisplayFailed;
         errdefer _ = c.XCloseDisplay(display);
 
@@ -30,13 +30,14 @@ pub const App = struct {
 
         var app = App{
             .ctx = undefined,
-            .widgets = .{},
+            .widgets = .empty,
             .layout_dirty = true,
         };
         app.ctx = .{
             .allocator = allocator,
+            .io = io,
             .config = config,
-            .current_time_ms = std.time.milliTimestamp(),
+            .current_time_ms = currentTimeMs(io),
             .gfx = .{
                 .display = display,
                 .screen_num = screen_num,
@@ -80,7 +81,7 @@ pub const App = struct {
         }};
 
         while (true) {
-            app.ctx.current_time_ms = std.time.milliTimestamp();
+            app.ctx.current_time_ms = currentTimeMs(app.ctx.io);
             try app.processPendingEvents();
             app.collectScheduledUpdates();
             try app.processUpdates();
@@ -285,3 +286,7 @@ pub const App = struct {
             -1;
     }
 };
+
+fn currentTimeMs(io: std.Io) i64 {
+    return std.Io.Clock.real.now(io).toMilliseconds();
+}
