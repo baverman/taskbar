@@ -6,6 +6,10 @@
             .url = "git+https://codeberg.org/ziglang/translate-c?ref=zig-0.16.x#42f630117deffd5318b4a6ceffbd366dd0af8cee",
             .hash = "translate_c-1.0.0-Q_BUWo75BgBmrtWsRz9QVUZlzvsSUUe_IIXD9vmWguhX",
         },
+        .zix11 = .{
+            .url = "git+https://github.com/baverman/zix11.git#aac56adecf5ab7ec178fd6ff6f30a0208e05df23",
+            .hash = "zix11-0.0.0-6Ond52R9BQD8-ONuuhKk_arIt-Ef2xcICMVPjfmN0zCR",
+        },
     },
     .paths = .{""},
     .fingerprint = 0x9d08481ccb1a46d1,

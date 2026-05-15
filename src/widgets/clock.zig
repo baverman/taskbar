@@ -3,6 +3,7 @@ const cfg = @import("../config.zig");
 const common = @import("common.zig");
 const x11 = @import("../x11.zig");
 const c = x11.c;
+const x = x11.x;
 
 pub const Clock = struct {
     config: cfg.Clock,
@@ -48,7 +49,12 @@ pub const Clock = struct {
         ctx.drawText(
             self.font,
             self.style.text,
-            .{ .x = rect.x + self.style.padding, .y = rect.y, .width = @max(0, rect.width - self.style.padding * 2), .height = rect.height },
+            .{
+                .x = rect.x + self.style.padding,
+                .y = rect.y,
+                .width = @max(0, rect.width - self.style.padding * 2),
+                .height = rect.height,
+            },
             text,
             self.config.text_align,
             self.style.text_offset,
@@ -56,7 +62,7 @@ pub const Clock = struct {
         );
     }
 
-    pub fn handleEvent(_: *Clock, _: *const common.Context, _: common.Rect, _: *const c.XEvent) !common.Status {
+    pub fn handleEvent(_: *Clock, _: *const common.Context, _: common.Rect, _: *const x.Event) !common.Status {
         return .{};
     }
 

@@ -3,12 +3,15 @@ const cfg = @import("../config.zig");
 const common = @import("common.zig");
 const x11 = @import("../x11.zig");
 const c = x11.c;
+const x = x11.x;
+const z = x11.z;
 const utils = @import("../utils.zig");
+const PT = z.PropertyType;
 
 const max_title_len = 512;
 
 pub const WindowEntry = struct {
-    window: c.Window,
+    window: x.Window,
     desktop: u32,
     title_buf: [max_title_len]u8 = undefined,
     title_len: usize = 0,
@@ -23,8 +26,8 @@ pub const Taskbar = struct {
     style: cfg.Style,
     font: *c.PangoFontDescription,
     windows: std.ArrayList(WindowEntry),
-    active_window: c.Window,
-    windows_buf: []c.Window,
+    active_window: x.Window,
+    windows_buf: []x.Window,
 
     pub fn init(ctx: *const common.Context, base_style: cfg.Style, config: cfg.Taskbar) !Taskbar {
         const style = common.resolveStyle(base_style, config.style);
@@ -33,8 +36,8 @@ pub const Taskbar = struct {
             .style = style,
             .font = try ctx.openFont(style.font),
             .windows = .empty,
-            .active_window = 0,
-            .windows_buf = try ctx.allocator.alloc(c.Window, 1024),
+            .active_window = x.Window.None,
+            .windows_buf = try ctx.allocator.alloc(x.Window, 1024),
         };
     }
 
@@ -45,28 +48,29 @@ pub const Taskbar = struct {
     }
 
     pub fn update(self: *Taskbar, ctx: *const common.Context) !common.Status {
+        const atoms = &ctx.gfx.atoms;
+        const cn = ctx.gfx.conn;
         self.windows.clearRetainingCapacity();
 
-        const current_desktop = try ctx.readCardinalProperty(ctx.gfx.root, ctx.gfx.atoms.net_current_desktop) orelse 0;
-        const reported_active_window = try ctx.readWindowProperty(ctx.gfx.root, ctx.gfx.atoms.net_active_window) orelse 0;
-        self.active_window = 0;
+        const current_desktop = try z.getScalarProperty(cn, ctx.gfx.root, atoms.net_current_desktop, PT.cardinal) orelse 0;
+        const reported_active_window = try z.getScalarProperty(cn, ctx.gfx.root, atoms.net_active_window, PT.window) orelse x.Window.None;
+        self.active_window = x.Window.None;
 
-        const windows = try ctx.readWindowListPropertyInto(self.windows_buf, ctx.gfx.root, ctx.gfx.atoms.net_client_list) orelse
-            &.{};
+        const windows = try z.getProperty(cn, ctx.gfx.root, ctx.gfx.atoms.net_client_list, PT.window, self.windows_buf);
 
         for (windows) |window| {
             if (window == ctx.gfx.window) continue;
-            ctx.subscribeClientWindow(window);
-            const desktop = try ctx.readCardinalProperty(window, ctx.gfx.atoms.net_wm_desktop) orelse continue;
+            try ctx.subscribeClientWindow(window);
+            const desktop = try z.getScalarProperty(cn, window, atoms.net_wm_desktop, PT.cardinal) orelse continue;
             if (desktop != current_desktop and desktop != 0xFFFFFFFF) continue;
-            if (try ctx.hasAtomProperty(window, ctx.gfx.atoms.net_wm_window_type, ctx.gfx.atoms.net_wm_window_type_dock)) continue;
-            if (try ctx.hasAtomProperty(window, ctx.gfx.atoms.net_wm_state, ctx.gfx.atoms.net_wm_state_skip_taskbar)) continue;
+            if (try ctx.hasAtomProperty(window, atoms.net_wm_window_type, atoms.net_wm_window_type_dock)) continue;
+            if (try ctx.hasAtomProperty(window, atoms.net_wm_state, atoms.net_wm_state_skip_taskbar)) continue;
 
             var entry = WindowEntry{
                 .window = window,
                 .desktop = desktop,
             };
-            const title = try ctx.readWindowTitleInto(&entry.title_buf, window) orelse utils.fillString(&entry.title_buf, "noname");
+            const title = try ctx.getWindowTitle(window, &entry.title_buf) orelse utils.fillString(&entry.title_buf, "noname");
             entry.title_len = title.len;
             try self.windows.append(ctx.allocator, entry);
             if (window == reported_active_window) self.active_window = window;
@@ -74,10 +78,9 @@ pub const Taskbar = struct {
         return .{ .redraw = true };
     }
 
-    pub fn handleEvent(self: *Taskbar, ctx: *const common.Context, rect: common.Rect, event: *const c.XEvent) !common.Status {
-        switch (event.type) {
-            c.PropertyNotify => {
-                const property = event.xproperty;
+    pub fn handleEvent(self: *Taskbar, ctx: *const common.Context, rect: common.Rect, event: *const x.Event) !common.Status {
+        switch (event.*) {
+            .PropertyNotify => |property| {
                 if (property.window == ctx.gfx.window) return .{};
                 if (property.window == ctx.gfx.root) {
                     if (property.atom != ctx.gfx.atoms.net_current_desktop and
@@ -90,11 +93,9 @@ pub const Taskbar = struct {
                     property.atom != ctx.gfx.atoms.net_wm_state) return .{};
                 return .{ .update = true };
             },
-            c.ButtonPress => {
-                const x = event.xbutton.x;
-                const y = event.xbutton.y;
-                if (y < 0 or y > ctx.config.height) return .{};
-                return self.handleButtonPress(ctx, rect, @intCast(x), @intCast(y));
+            .ButtonPress => |button| {
+                if (button.event_y < 0 or button.event_y > ctx.config.height) return .{};
+                return self.handleButtonPress(ctx, rect, button.event_x, button.event_y);
             },
             else => return .{},
         }
@@ -108,33 +109,33 @@ pub const Taskbar = struct {
 
     pub fn draw(self: *Taskbar, ctx: *const common.Context, rect: common.Rect) void {
         const item_width = self.itemWidth(rect.width);
-        var x = rect.x;
+        var x_pos = rect.x;
         for (self.windows.items) |window| {
             if (item_width <= 0) break;
             const draw_width = item_width;
             if (window.window == self.active_window) {
-                ctx.fillRect(self.style.active_bg, .{ .x = x, .y = rect.y, .width = draw_width, .height = rect.height });
+                ctx.fillRect(self.style.active_bg, .{ .x = x_pos, .y = rect.y, .width = draw_width, .height = rect.height });
             }
             ctx.drawText(
                 self.font,
                 if (window.window == self.active_window) self.style.active_text else self.style.text,
-                .{ .x = x + self.style.padding, .y = rect.y, .width = @max(0, draw_width - self.style.padding * 2), .height = rect.height },
+                .{ .x = x_pos + self.style.padding, .y = rect.y, .width = @max(0, draw_width - self.style.padding * 2), .height = rect.height },
                 window.title(),
                 .left,
                 self.style.text_offset,
                 true,
             );
-            x += draw_width;
+            x_pos += draw_width;
         }
     }
 
-    fn handleButtonPress(self: *Taskbar, ctx: *const common.Context, rect: common.Rect, x: i32, _: i32) common.Status {
+    fn handleButtonPress(self: *Taskbar, ctx: *const common.Context, rect: common.Rect, x_pos: i32, _: i32) common.Status {
         const width = self.itemWidth(rect.width);
         var left = rect.x;
         for (self.windows.items, 0..) |window, idx| {
             const draw_width = if (idx + 1 == self.windows.items.len) rect.x + rect.width - left else width;
-            if (x >= left and x <= left + draw_width) {
-                ctx.activateWindow(window.window);
+            if (x_pos >= left and x_pos <= left + draw_width) {
+                ctx.activateWindow(window.window) catch {};
                 return .{};
             }
             left += draw_width;

@@ -3,6 +3,8 @@ const cfg = @import("../config.zig");
 const x11 = @import("../x11.zig");
 const common = @import("common.zig");
 const c = x11.c;
+const x = x11.x;
+const PT = x11.z.PropertyType;
 
 const max_names_len = 1024;
 const max_fallback_name_len = 32;
@@ -45,16 +47,23 @@ pub const Pager = struct {
     }
 
     pub fn update(self: *Pager, ctx: *const common.Context) !common.Status {
+        const atoms = &ctx.gfx.atoms;
+        const cn = ctx.gfx.conn;
         var old_width: i32 = 0;
         for (self.desktops.items) |desktop| old_width += desktop.title_width;
 
         self.desktops.clearRetainingCapacity();
 
-        const desktop_count = try ctx.readCardinalProperty(ctx.gfx.root, ctx.gfx.atoms.net_number_of_desktops) orelse 1;
-        self.current_desktop = try ctx.readCardinalProperty(ctx.gfx.root, ctx.gfx.atoms.net_current_desktop) orelse 0;
+        const desktop_count = try x11.z.getScalarProperty(cn, ctx.gfx.root, atoms.net_number_of_desktops, PT.cardinal) orelse 1;
+        self.current_desktop = try x11.z.getScalarProperty(cn, ctx.gfx.root, atoms.net_current_desktop, PT.cardinal) orelse 0;
 
-        const names_data = try ctx.readPropertyBytesInto(self.names_buf, ctx.gfx.root, ctx.gfx.atoms.net_desktop_names, ctx.gfx.atoms.utf8_string);
-        var name_iter = x11.DesktopNameIter.init(names_data orelse &.{});
+        const names_data = try ctx.readPropertyBytesInto(
+            ctx.gfx.root,
+            ctx.gfx.atoms.net_desktop_names,
+            ctx.gfx.atoms.utf8_string,
+            self.names_buf,
+        );
+        var name_iter = std.mem.splitScalar(u8, names_data orelse &.{}, 0);
         var i: u32 = 0;
         while (i < desktop_count) : (i += 1) {
             try self.desktops.append(ctx.allocator, .{
@@ -71,21 +80,18 @@ pub const Pager = struct {
         };
     }
 
-    pub fn handleEvent(self: *Pager, ctx: *const common.Context, rect: common.Rect, event: *const c.XEvent) !common.Status {
-        switch (event.type) {
-            c.PropertyNotify => {
-                const property = event.xproperty;
+    pub fn handleEvent(self: *Pager, ctx: *const common.Context, rect: common.Rect, event: *const x.Event) !common.Status {
+        switch (event.*) {
+            .PropertyNotify => |property| {
                 if (property.window != ctx.gfx.root) return .{};
                 if (property.atom != ctx.gfx.atoms.net_current_desktop and
                     property.atom != ctx.gfx.atoms.net_number_of_desktops and
                     property.atom != ctx.gfx.atoms.net_desktop_names) return .{};
                 return .{ .update = true };
             },
-            c.ButtonPress => {
-                const x = event.xbutton.x;
-                const y = event.xbutton.y;
-                if (y < 0 or y > ctx.config.height) return .{};
-                return self.handleButtonPress(ctx, rect, @intCast(x), @intCast(y));
+            .ButtonPress => |button| {
+                if (button.event_y < 0 or button.event_y > ctx.config.height) return .{};
+                return self.handleButtonPress(ctx, rect, button.event_x, button.event_y);
             },
             else => return .{},
         }
@@ -99,34 +105,44 @@ pub const Pager = struct {
     }
 
     pub fn draw(self: *Pager, ctx: *const common.Context, rect: common.Rect) void {
-        var x = rect.x;
+        var x_pos = rect.x;
         for (self.desktops.items) |desktop| {
             var fallback_buf: [max_fallback_name_len]u8 = undefined;
             const label = desktop.title(&fallback_buf);
             const item_width = desktop.title_width;
             if (desktop.index == self.current_desktop) {
-                ctx.fillRect(self.style.active_bg, .{ .x = x, .y = rect.y, .width = item_width, .height = rect.height });
+                ctx.fillRect(self.style.active_bg, .{
+                    .x = x_pos,
+                    .y = rect.y,
+                    .width = item_width,
+                    .height = rect.height,
+                });
             }
             ctx.drawText(
                 self.font,
                 if (desktop.index == self.current_desktop) self.style.active_text else self.style.text,
-                .{ .x = x + self.style.padding, .y = rect.y, .width = @max(0, item_width - self.style.padding * 2), .height = rect.height },
+                .{
+                    .x = x_pos + self.style.padding,
+                    .y = rect.y,
+                    .width = @max(0, item_width - self.style.padding * 2),
+                    .height = rect.height,
+                },
                 label,
                 .left,
                 self.style.text_offset,
                 false,
             );
-            x += item_width;
+            x_pos += item_width;
         }
     }
 
-    fn handleButtonPress(self: *Pager, ctx: *const common.Context, rect: common.Rect, x: i32, y: i32) common.Status {
+    fn handleButtonPress(self: *Pager, ctx: *const common.Context, rect: common.Rect, x_pos: i32, y: i32) common.Status {
         _ = y;
         var left = rect.x;
         for (self.desktops.items) |desktop| {
             const width = desktop.title_width;
-            if (x >= left and x <= left + width) {
-                ctx.setCurrentDesktop(desktop.index);
+            if (x_pos >= left and x_pos <= left + width) {
+                ctx.setCurrentDesktop(desktop.index) catch {};
                 return .{};
             }
             left += width;

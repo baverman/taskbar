@@ -1,8 +1,12 @@
 const std = @import("std");
 const cfg = @import("../config.zig");
+const cairo_mod = @import("../cairo.zig");
 const x11 = @import("../x11.zig");
 const c = x11.c;
+const x = x11.x;
+const z = x11.z;
 const utils = @import("../utils.zig");
+const PT = z.PropertyType;
 
 pub const Rect = struct {
     x: i32,
@@ -19,12 +23,13 @@ pub const Status = struct {
 };
 
 pub const Gfx = struct {
-    display: *c.Display,
-    screen_num: c_int,
-    root: c.Window,
-    window: c.Window,
-    visual: ?*c.Visual,
-    cairo_surface: *c.cairo_surface_t,
+    conn: *z.Connection,
+    root: x.Window,
+    window: x.Window,
+    root_width: u16,
+    root_depth: u8,
+    root_visual: u32,
+    cairo_surface: cairo_mod.Surface,
     cairo: *c.cairo_t,
     pango_layout: *c.PangoLayout,
     atoms: x11.Atoms,
@@ -38,7 +43,7 @@ pub const Context = struct {
     current_time_ms: i64,
 
     pub fn panelWidth(ctx: *const Context) i32 {
-        return c.XDisplayWidth(ctx.gfx.display, ctx.gfx.screen_num);
+        return ctx.gfx.root_width;
     }
 
     pub fn openFont(ctx: *const Context, font: cfg.Font) !*c.PangoFontDescription {
@@ -50,7 +55,13 @@ pub const Context = struct {
 
     pub fn fillRect(ctx: *const Context, color: u32, rect: Rect) void {
         setSourceColor(ctx.gfx.cairo, color);
-        c.cairo_rectangle(ctx.gfx.cairo, @floatFromInt(rect.x), @floatFromInt(rect.y), @floatFromInt(rect.width), @floatFromInt(rect.height));
+        c.cairo_rectangle(
+            ctx.gfx.cairo,
+            @floatFromInt(rect.x),
+            @floatFromInt(rect.y),
+            @floatFromInt(rect.width),
+            @floatFromInt(rect.height),
+        );
         _ = c.cairo_fill(ctx.gfx.cairo);
     }
 
@@ -100,7 +111,13 @@ pub const Context = struct {
         const y = rect.y + @divFloor(@max(0, rect.height - text_height), 2) + text_offset;
 
         _ = c.cairo_save(ctx.gfx.cairo);
-        c.cairo_rectangle(ctx.gfx.cairo, @floatFromInt(rect.x), @floatFromInt(rect.y), @floatFromInt(rect.width), @floatFromInt(rect.height));
+        c.cairo_rectangle(
+            ctx.gfx.cairo,
+            @floatFromInt(rect.x),
+            @floatFromInt(rect.y),
+            @floatFromInt(rect.width),
+            @floatFromInt(rect.height),
+        );
         c.cairo_clip(ctx.gfx.cairo);
         setSourceColor(ctx.gfx.cairo, color_rgb);
         c.cairo_move_to(ctx.gfx.cairo, @floatFromInt(rect.x), @floatFromInt(y));
@@ -108,122 +125,72 @@ pub const Context = struct {
         _ = c.cairo_restore(ctx.gfx.cairo);
     }
 
-    pub fn readWindowTitleInto(ctx: *const Context, dst: []u8, window: c.Window) !?[]const u8 {
-        if (try ctx.readPropertyBytesInto(dst, window, ctx.gfx.atoms.net_wm_icon_name, ctx.gfx.atoms.utf8_string)) |result| {
+    pub fn getWindowTitle(ctx: *const Context, window: x.Window, buffer: []u8) !?[]const u8 {
+        if (try ctx.readPropertyBytesInto(window, ctx.gfx.atoms.net_wm_icon_name, ctx.gfx.atoms.utf8_string, buffer)) |result| {
             return result;
         }
-        if (try ctx.readPropertyBytesInto(dst, window, ctx.gfx.atoms.net_wm_name, ctx.gfx.atoms.utf8_string)) |result| {
+        if (try ctx.readPropertyBytesInto(window, ctx.gfx.atoms.net_wm_name, ctx.gfx.atoms.utf8_string, buffer)) |result| {
             return result;
         }
-        return try ctx.readPropertyBytesInto(dst, window, ctx.gfx.atoms.wm_name, c.AnyPropertyType);
+        return try ctx.readPropertyBytesInto(window, ctx.gfx.atoms.wm_name, x.Atom_.Any, buffer);
     }
 
-    pub fn readCardinalProperty(ctx: *const Context, window: c.Window, atom: c.Atom) !?u32 {
-        const prop = try ctx.getProperty(window, atom, 0, 1, c.XA_CARDINAL, 32) orelse return null;
-        defer prop.deinit();
-        const values: [*]const c_ulong = @ptrCast(@alignCast(prop.bytes.ptr));
-        return @truncate(values[0]);
+    pub fn readPropertyBytesInto(
+        ctx: *const Context,
+        window: x.Window,
+        property: x.Atom,
+        expected_type: x.Atom,
+        buffer: []u8,
+    ) !?[]const u8 {
+        const values = z.getProperty(ctx.gfx.conn, window, property, PT.string.as(expected_type), buffer) catch |err| switch (err) {
+            error.UnexpectedType, error.UnexpectedFormat, error.PropertyTruncated => return null,
+            else => return err,
+        };
+        if (values.len == 0) return null;
+        return values;
     }
 
-    pub fn readWindowProperty(ctx: *const Context, window: c.Window, atom: c.Atom) !?c.Window {
-        const prop = try ctx.getProperty(window, atom, 0, 1, c.XA_WINDOW, 32) orelse return null;
-        defer prop.deinit();
-        const values: [*]const c_ulong = @ptrCast(@alignCast(prop.bytes.ptr));
-        return values[0];
-    }
-
-    pub fn readWindowListPropertyInto(ctx: *const Context, dst: []c.Window, window: c.Window, atom: c.Atom) !?[]c.Window {
-        const prop = try ctx.getProperty(window, atom, 0, 4096, c.XA_WINDOW, 32) orelse return null;
-        defer prop.deinit();
-        const values: [*]const c_ulong = @ptrCast(@alignCast(prop.bytes.ptr));
-        @memcpy(dst[0..prop.nitems], values);
-        return dst[0..prop.nitems];
-    }
-
-    pub fn readPropertyBytesInto(ctx: *const Context, dst: []u8, window: c.Window, atom: c.Atom, expected_type: c.Atom) !?[]const u8 {
-        const prop = try ctx.getProperty(window, atom, 0, 4096, expected_type, 8) orelse return null;
-        defer prop.deinit();
-        return utils.fillString(dst, prop.bytes);
-    }
-
-    pub fn hasAtomProperty(ctx: *const Context, window: c.Window, property_atom: c.Atom, expected_atom: c.Atom) !bool {
-        const prop = try ctx.getProperty(window, property_atom, 0, 32, c.XA_ATOM, 32) orelse return false;
-        defer prop.deinit();
-        const values: [*]const c_ulong = @ptrCast(@alignCast(prop.bytes.ptr));
-        for (0..prop.nitems) |idx| {
-            if (values[idx] == expected_atom) return true;
+    pub fn hasAtomProperty(ctx: *const Context, window: x.Window, property_atom: x.Atom, expected_atom: x.Atom) !bool {
+        var atoms_buf: [32]x.Atom = undefined;
+        const values = z.getProperty(ctx.gfx.conn, window, property_atom, PT.atom, &atoms_buf) catch |err| switch (err) {
+            error.UnexpectedType, error.UnexpectedFormat, error.PropertyTruncated => return false,
+            else => return err,
+        };
+        for (values) |value| {
+            if (expected_atom == value) return true;
         }
         return false;
     }
 
-    pub fn subscribeClientWindow(ctx: *const Context, window: c.Window) void {
-        _ = c.XSelectInput(ctx.gfx.display, window, c.PropertyChangeMask | c.StructureNotifyMask);
+    pub fn subscribeClientWindow(ctx: *const Context, window: x.Window) !void {
+        try ctx.gfx.conn.request(x.ChangeWindowAttributes, .{
+            .window = window,
+            .value_list = .{
+                .event_mask = x.EventMask.of(&.{ .PropertyChange, .StructureNotify }),
+            },
+        });
     }
 
-    pub fn setCurrentDesktop(ctx: *const Context, index: u32) void {
-        x11.sendClientMessage(
-            ctx.gfx.display,
+    pub fn setCurrentDesktop(ctx: *const Context, index: u32) !void {
+        try x11.sendClientMessage(
+            ctx.gfx.conn,
             ctx.gfx.root,
             ctx.gfx.root,
             ctx.gfx.atoms.net_current_desktop,
-            c.SubstructureRedirectMask | c.SubstructureNotifyMask,
-            .{ index, c.CurrentTime, 0, 0, 0 },
+            x.EventMask.of(&.{ .SubstructureRedirect, .SubstructureNotify }),
+            &.{ index, @intFromEnum(x.Time.CurrentTime) },
         );
-        _ = c.XFlush(ctx.gfx.display);
     }
 
-    pub fn activateWindow(ctx: *const Context, window: c.Window) void {
-        x11.sendClientMessage(
-            ctx.gfx.display,
+    pub fn activateWindow(ctx: *const Context, window: x.Window) !void {
+        try x11.sendClientMessage(
+            ctx.gfx.conn,
             ctx.gfx.root,
             window,
             ctx.gfx.atoms.net_active_window,
-            c.SubstructureRedirectMask | c.SubstructureNotifyMask,
-            .{ 1, c.CurrentTime, 0, 0, 0 },
+            x.EventMask.of(&.{ .SubstructureRedirect, .SubstructureNotify }),
+            &.{ 1, @intFromEnum(x.Time.CurrentTime) },
         );
-        _ = c.XFlush(ctx.gfx.display);
-    }
-
-    const PropertyData = struct {
-        actual_type: c.Atom,
-        actual_format: c_int,
-        nitems: usize,
-        bytes: []const u8,
-        raw_prop: [*c]u8,
-
-        fn deinit(self: @This()) void {
-            if (self.raw_prop != null) _ = c.XFree(self.raw_prop);
-        }
-    };
-
-    fn getProperty(ctx: *const Context, window: c.Window, atom: c.Atom, long_offset: c_long, long_length: c_long, req_type: c.Atom, req_format: c_int) !?PropertyData {
-        var actual_type: c.Atom = 0;
-        var actual_format: c_int = 0;
-        var nitems: c_ulong = 0;
-        var bytes_after: c_ulong = 0;
-        var prop: [*c]u8 = null;
-        if (c.XGetWindowProperty(ctx.gfx.display, window, atom, long_offset, long_length, c.False, req_type, &actual_type, &actual_format, &nitems, &bytes_after, &prop) != c.Success) return null;
-        if (nitems == 0 or prop == null or actual_format != req_format) {
-            if (prop != null) _ = c.XFree(prop);
-            return null;
-        }
-        const len = switch (req_format) {
-            8 => @as(usize, @intCast(nitems)),
-            16 => @as(usize, @intCast(nitems)) * 2,
-            32 => @as(usize, @intCast(nitems)) * @sizeOf(c_ulong),
-            else => 0,
-        };
-        if (len == 0) {
-            _ = c.XFree(prop);
-            return null;
-        }
-        return .{
-            .actual_type = actual_type,
-            .actual_format = actual_format,
-            .nitems = @intCast(nitems),
-            .bytes = @as([*]const u8, @ptrCast(prop))[0..len],
-            .raw_prop = prop,
-        };
     }
 };
 

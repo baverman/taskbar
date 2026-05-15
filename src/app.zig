@@ -1,10 +1,14 @@
 const std = @import("std");
+const cairo_mod = @import("cairo.zig");
 const cfg = @import("config.zig");
 const layout = @import("layout.zig");
 const x11 = @import("x11.zig");
 const common = @import("widgets/common.zig");
 const widget_mod = @import("widgets/widget.zig");
 const c = x11.c;
+const x = x11.x;
+const z = x11.z;
+const PT = z.PropertyType;
 
 const WidgetItem = struct {
     widget: widget_mod.Widget,
@@ -20,30 +24,30 @@ pub const App = struct {
     widgets: std.ArrayList(WidgetItem),
     layout_dirty: bool,
 
-    pub fn init(allocator: std.mem.Allocator, io: std.Io, config: *const cfg.Config) !App {
-        const display = c.XOpenDisplay(null) orelse return error.XOpenDisplayFailed;
-        errdefer _ = c.XCloseDisplay(display);
-
-        const screen_num = c.XDefaultScreen(display);
-        const root = c.XRootWindow(display, screen_num);
-        const atoms = x11.internAtoms(display);
+    pub fn init(allocator: std.mem.Allocator, io: std.Io, conn: *z.Connection, config: *const cfg.Config) !App {
+        const root = conn.root_window;
+        const root_geometry = try conn.request(x.GetGeometry, .{ .drawable = .{ .window = root } });
+        const root_attrs = try conn.request(x.GetWindowAttributes, .{ .window = root });
+        const atoms = try x11.internAtoms(conn);
 
         var app = App{
             .ctx = undefined,
             .widgets = .empty,
             .layout_dirty = true,
         };
+
         app.ctx = .{
             .allocator = allocator,
             .io = io,
             .config = config,
             .current_time_ms = currentTimeMs(io),
             .gfx = .{
-                .display = display,
-                .screen_num = screen_num,
+                .conn = conn,
                 .root = root,
-                .window = 0,
-                .visual = null,
+                .window = x.Window.None,
+                .root_width = root_geometry.width,
+                .root_depth = root_geometry.depth,
+                .root_visual = root_attrs.visual,
                 .cairo_surface = undefined,
                 .cairo = undefined,
                 .pango_layout = undefined,
@@ -55,9 +59,9 @@ pub const App = struct {
         try app.createGraphics();
         try app.initLayout();
 
-        app.setDockProperties();
-        app.subscribeRootChanges();
-        app.mapWindow();
+        try app.setDockProperties();
+        try app.subscribeRootChanges();
+        try app.mapWindow();
 
         return app;
     }
@@ -67,19 +71,13 @@ pub const App = struct {
         app.widgets.deinit(app.ctx.allocator);
         c.g_object_unref(app.ctx.gfx.pango_layout);
         c.cairo_destroy(app.ctx.gfx.cairo);
-        c.cairo_surface_destroy(app.ctx.gfx.cairo_surface);
-        if (app.ctx.gfx.window != 0) _ = c.XDestroyWindow(app.ctx.gfx.display, app.ctx.gfx.window);
-        _ = c.XCloseDisplay(app.ctx.gfx.display);
+        app.ctx.gfx.cairo_surface.deinit(app.ctx.gfx.conn);
+        if (app.ctx.gfx.window != x.Window.None) {
+            _ = app.ctx.gfx.conn.request(x.DestroyWindow, .{ .window = app.ctx.gfx.window }) catch {};
+        }
     }
 
     pub fn run(app: *App) !void {
-        const xfd = c.ConnectionNumber(app.ctx.gfx.display);
-        var pollfd = [1]std.posix.pollfd{.{
-            .fd = xfd,
-            .events = std.posix.POLL.IN,
-            .revents = 0,
-        }};
-
         while (true) {
             app.ctx.current_time_ms = currentTimeMs(app.ctx.io);
             try app.processPendingEvents();
@@ -87,39 +85,43 @@ pub const App = struct {
             try app.processUpdates();
             app.redraw();
 
-            if (c.XPending(app.ctx.gfx.display) == 0) {
-                const timeout_ms = app.nextPollTimeoutMs();
-                _ = try std.posix.poll(&pollfd, timeout_ms);
+            if (!app.ctx.gfx.conn.hasPendingEvents()) {
+                _ = try app.ctx.gfx.conn.waitForEvents(app.nextPollTimeoutMs());
             }
         }
     }
 
     fn createWindow(app: *App) !void {
-        const width: c_uint = @intCast(c.XDisplayWidth(app.ctx.gfx.display, app.ctx.gfx.screen_num));
-        app.ctx.gfx.window = c.XCreateSimpleWindow(
-            app.ctx.gfx.display,
-            app.ctx.gfx.root,
-            0,
-            0,
-            width,
-            @intCast(app.ctx.config.height),
-            0,
-            app.ctx.config.style.bg,
-            app.ctx.config.style.bg,
-        );
-        _ = c.XSelectInput(app.ctx.gfx.display, app.ctx.gfx.window, c.ExposureMask | c.ButtonPressMask | c.StructureNotifyMask | c.SubstructureNotifyMask);
+        const window = try app.ctx.gfx.conn.allocId(x.Window);
+        try app.ctx.gfx.conn.request(x.CreateWindow, .{
+            .depth = app.ctx.gfx.root_depth,
+            .wid = window,
+            .parent = app.ctx.gfx.root,
+            .x = 0,
+            .y = 0,
+            .width = app.ctx.gfx.root_width,
+            .height = @intCast(app.ctx.config.height),
+            .border_width = 0,
+            .class = .CopyFromParent,
+            .visual = 0,
+            .value_list = .{
+                .background_pixel = app.ctx.config.style.bg,
+                .border_pixel = app.ctx.config.style.bg,
+                .event_mask = x.EventMask.of(&.{ .Exposure, .ButtonPress, .StructureNotify, .SubstructureNotify }),
+            },
+        });
+        app.ctx.gfx.window = window;
     }
 
     fn createGraphics(app: *App) !void {
-        app.ctx.gfx.visual = c.XDefaultVisual(app.ctx.gfx.display, app.ctx.gfx.screen_num);
-        app.ctx.gfx.cairo_surface = c.cairo_xlib_surface_create(
-            app.ctx.gfx.display,
+        app.ctx.gfx.cairo_surface = try cairo_mod.Surface.init(
+            app.ctx.gfx.conn,
             app.ctx.gfx.window,
-            app.ctx.gfx.visual,
-            c.XDisplayWidth(app.ctx.gfx.display, app.ctx.gfx.screen_num),
-            app.ctx.config.height,
-        ) orelse return error.CairoSurfaceCreateFailed;
-        app.ctx.gfx.cairo = c.cairo_create(app.ctx.gfx.cairo_surface) orelse return error.CairoCreateFailed;
+            app.ctx.gfx.root_depth,
+            app.ctx.gfx.root_width,
+            @intCast(app.ctx.config.height),
+        );
+        app.ctx.gfx.cairo = c.cairo_create(app.ctx.gfx.cairo_surface.surface()) orelse return error.CairoCreateFailed;
         app.ctx.gfx.pango_layout = c.pango_cairo_create_layout(app.ctx.gfx.cairo) orelse return error.PangoLayoutCreateFailed;
     }
 
@@ -136,50 +138,69 @@ pub const App = struct {
         }
     }
 
-    fn mapWindow(app: *App) void {
-        _ = c.XMapWindow(app.ctx.gfx.display, app.ctx.gfx.window);
-        _ = c.XFlush(app.ctx.gfx.display);
+    fn mapWindow(app: *App) !void {
+        try app.ctx.gfx.conn.request(x.MapWindow, .{ .window = app.ctx.gfx.window });
+        app.ctx.gfx.cairo_surface.present(app.ctx.gfx.conn);
     }
 
-    fn subscribeRootChanges(app: *App) void {
-        _ = c.XSelectInput(app.ctx.gfx.display, app.ctx.gfx.root, c.PropertyChangeMask);
-        _ = c.XFlush(app.ctx.gfx.display);
+    fn subscribeRootChanges(app: *App) !void {
+        try app.ctx.gfx.conn.request(x.ChangeWindowAttributes, .{
+            .window = app.ctx.gfx.root,
+            .value_list = .{
+                .event_mask = x.EventMask.of(&.{.PropertyChange}),
+            },
+        });
     }
 
-    fn setDockProperties(app: *App) void {
-        const screen_width: c_ulong = @intCast(c.XDisplayWidth(app.ctx.gfx.display, app.ctx.gfx.screen_num));
-        var size_hints = std.mem.zeroes(c.XSizeHints);
-        size_hints.flags = c.PPosition | c.PMinSize | c.PMaxSize;
-        size_hints.x = 0;
-        size_hints.y = 0;
-        size_hints.min_width = @intCast(screen_width);
-        size_hints.min_height = @intCast(app.ctx.config.height);
-        size_hints.max_width = @intCast(screen_width);
-        size_hints.max_height = @intCast(app.ctx.config.height);
-        _ = c.XSetWMNormalHints(app.ctx.gfx.display, app.ctx.gfx.window, &size_hints);
+    fn setDockProperties(app: *App) !void {
+        const atoms = &app.ctx.gfx.atoms;
+        const w = app.ctx.gfx.window;
+        const cn = app.ctx.gfx.conn;
 
-        const win_type = [_]c.Atom{app.ctx.gfx.atoms.net_wm_window_type_dock};
-        _ = c.XChangeProperty(app.ctx.gfx.display, app.ctx.gfx.window, app.ctx.gfx.atoms.net_wm_window_type, c.XA_ATOM, 32, c.PropModeReplace, @ptrCast(&win_type), win_type.len);
+        const screen_width: u32 = app.ctx.gfx.root_width;
+        const p_position: u32 = 1 << 2;
+        const p_min_size: u32 = 1 << 4;
+        const p_max_size: u32 = 1 << 5;
+        const size_hints = [_]u32{
+            p_position | p_min_size | p_max_size,
+            0,
+            0,
+            0,
+            0,
+            screen_width,
+            @intCast(app.ctx.config.height),
+            screen_width,
+            @intCast(app.ctx.config.height),
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+        };
+        try z.setProperty(cn, w, atoms.wm_normal_hints, PT.cardinal.as(atoms.wm_size_hints), &size_hints);
 
-        const desktop = [_]c_ulong{0xFFFFFFFF};
-        _ = c.XChangeProperty(app.ctx.gfx.display, app.ctx.gfx.window, app.ctx.gfx.atoms.net_wm_desktop, c.XA_CARDINAL, 32, c.PropModeReplace, @ptrCast(&desktop), desktop.len);
+        try z.setProperty(cn, w, atoms.net_wm_window_type, PT.atom, &.{atoms.net_wm_window_type_dock});
+        try z.setProperty(cn, w, atoms.net_wm_desktop, PT.cardinal, &.{0xFFFFFFFF});
 
-        const strut = [_]c_ulong{ 0, 0, @intCast(app.ctx.config.height), 0 };
-        _ = c.XChangeProperty(app.ctx.gfx.display, app.ctx.gfx.window, app.ctx.gfx.atoms.net_wm_strut, c.XA_CARDINAL, 32, c.PropModeReplace, @ptrCast(&strut), strut.len);
+        const strut = [_]u32{ 0, 0, @intCast(app.ctx.config.height), 0 };
+        try z.setProperty(cn, w, atoms.net_wm_strut, PT.cardinal, &strut);
 
-        const strut_partial = [_]c_ulong{
+        const strut_partial = [_]u32{
             0, 0,                @intCast(app.ctx.config.height), 0,
             0, 0,                0,                               0,
             0, screen_width - 1, 0,                               0,
         };
-        _ = c.XChangeProperty(app.ctx.gfx.display, app.ctx.gfx.window, app.ctx.gfx.atoms.net_wm_strut_partial, c.XA_CARDINAL, 32, c.PropModeReplace, @ptrCast(&strut_partial), strut_partial.len);
+        try z.setProperty(cn, w, atoms.net_wm_strut_partial, PT.cardinal, &strut_partial);
 
         const title = "taskbar";
-        _ = c.XChangeProperty(app.ctx.gfx.display, app.ctx.gfx.window, app.ctx.gfx.atoms.net_wm_name, app.ctx.gfx.atoms.utf8_string, 8, c.PropModeReplace, title.ptr, title.len);
+        try z.setProperty(cn, w, atoms.net_wm_name, PT.string.as(atoms.utf8_string), title);
 
         const wm_class = "taskbar\x00taskbar\x00";
-        _ = c.XChangeProperty(app.ctx.gfx.display, app.ctx.gfx.window, app.ctx.gfx.atoms.wm_class, c.XA_STRING, 8, c.PropModeReplace, wm_class.ptr, wm_class.len);
-        _ = c.XFlush(app.ctx.gfx.display);
+        try z.setProperty(cn, w, atoms.wm_class, PT.string, wm_class);
     }
 
     fn redraw(app: *App) void {
@@ -202,15 +223,13 @@ pub const App = struct {
             }
             item.dirty = false;
         }
-        _ = c.XFlush(app.ctx.gfx.display);
+        app.ctx.gfx.cairo_surface.present(app.ctx.gfx.conn);
     }
 
     fn processPendingEvents(app: *App) !void {
-        while (c.XPending(app.ctx.gfx.display) > 0) {
-            var event: c.XEvent = undefined;
-            _ = c.XNextEvent(app.ctx.gfx.display, &event);
-            switch (event.type) {
-                c.Expose => {
+        while (try app.ctx.gfx.conn.pollEvent()) |event| {
+            switch (event) {
+                .Expose => {
                     for (app.widgets.items) |*item| item.dirty = true;
                 },
                 else => try app.handleEvent(&event),
@@ -218,10 +237,10 @@ pub const App = struct {
         }
     }
 
-    fn handleEvent(app: *App, event: *const c.XEvent) !void {
+    fn handleEvent(app: *App, event: *const x.Event) !void {
         for (app.widgets.items) |*item| {
-            if (event.type == c.ButtonPress and
-                (event.xbutton.x < item.rect.x or event.xbutton.x > item.rect.x + item.rect.width))
+            if (event.* == .ButtonPress and
+                (event.ButtonPress.event_x < item.rect.x or event.ButtonPress.event_x > item.rect.x + item.rect.width))
             {
                 continue;
             }
@@ -229,7 +248,7 @@ pub const App = struct {
                 inline else => |*w| try w.handleEvent(&app.ctx, item.rect, event),
             };
             app.applyEventStatus(item, status);
-            if (event.type == c.ButtonPress) return;
+            if (event.* == .ButtonPress) return;
         }
     }
 

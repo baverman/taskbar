@@ -1,10 +1,8 @@
 #include <poll.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
 #include <time.h>
-#include <X11/Xatom.h>
-#include <X11/Xlib-xcb.h>
-#include <X11/Xlib.h>
-#include <X11/Xutil.h>
-#include <cairo/cairo-xlib.h>
+#include <cairo/cairo.h>
 
 typedef struct _PangoLayout PangoLayout;
 typedef struct _PangoFontDescription PangoFontDescription;
