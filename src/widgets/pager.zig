@@ -54,13 +54,13 @@ pub const Pager = struct {
 
         self.desktops.clearRetainingCapacity();
 
-        const desktop_count = try x11.z.getScalarProperty(cn, ctx.gfx.root, atoms.net_number_of_desktops, PT.cardinal) orelse 1;
-        self.current_desktop = try x11.z.getScalarProperty(cn, ctx.gfx.root, atoms.net_current_desktop, PT.cardinal) orelse 0;
+        const desktop_count = try x11.z.getScalarProperty(cn, ctx.gfx.root, atoms._NET_NUMBER_OF_DESKTOPS, PT.cardinal) orelse 1;
+        self.current_desktop = try x11.z.getScalarProperty(cn, ctx.gfx.root, atoms._NET_CURRENT_DESKTOP, PT.cardinal) orelse 0;
 
         const names_data = try ctx.readPropertyBytesInto(
             ctx.gfx.root,
-            ctx.gfx.atoms.net_desktop_names,
-            ctx.gfx.atoms.utf8_string,
+            atoms._NET_DESKTOP_NAMES,
+            atoms.UTF8_STRING,
             self.names_buf,
         );
         var name_iter = std.mem.splitScalar(u8, names_data orelse &.{}, 0);
@@ -81,12 +81,13 @@ pub const Pager = struct {
     }
 
     pub fn handleEvent(self: *Pager, ctx: *const common.Context, rect: common.Rect, event: *const x.Event) !common.Status {
+        const atoms = &ctx.gfx.atoms;
         switch (event.*) {
             .PropertyNotify => |property| {
                 if (property.window != ctx.gfx.root) return .{};
-                if (property.atom != ctx.gfx.atoms.net_current_desktop and
-                    property.atom != ctx.gfx.atoms.net_number_of_desktops and
-                    property.atom != ctx.gfx.atoms.net_desktop_names) return .{};
+                if (property.atom != atoms._NET_CURRENT_DESKTOP and
+                    property.atom != atoms._NET_NUMBER_OF_DESKTOPS and
+                    property.atom != atoms._NET_DESKTOP_NAMES) return .{};
                 return .{ .update = true };
             },
             .ButtonPress => |button| {

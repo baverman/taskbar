@@ -32,7 +32,7 @@ pub const Gfx = struct {
     cairo_surface: cairo_mod.Surface,
     cairo: *c.cairo_t,
     pango_layout: *c.PangoLayout,
-    atoms: x11.Atoms,
+    atoms: z.AtomEnum(x11.Atoms).Struct,
 };
 
 pub const Context = struct {
@@ -126,13 +126,13 @@ pub const Context = struct {
     }
 
     pub fn getWindowTitle(ctx: *const Context, window: x.Window, buffer: []u8) !?[]const u8 {
-        if (try ctx.readPropertyBytesInto(window, ctx.gfx.atoms.net_wm_icon_name, ctx.gfx.atoms.utf8_string, buffer)) |result| {
+        if (try ctx.readPropertyBytesInto(window, ctx.gfx.atoms._NET_WM_ICON_NAME, ctx.gfx.atoms.UTF8_STRING, buffer)) |result| {
             return result;
         }
-        if (try ctx.readPropertyBytesInto(window, ctx.gfx.atoms.net_wm_name, ctx.gfx.atoms.utf8_string, buffer)) |result| {
+        if (try ctx.readPropertyBytesInto(window, ctx.gfx.atoms._NET_WM_NAME, ctx.gfx.atoms.UTF8_STRING, buffer)) |result| {
             return result;
         }
-        return try ctx.readPropertyBytesInto(window, ctx.gfx.atoms.wm_name, x.Atom_.Any, buffer);
+        return try ctx.readPropertyBytesInto(window, ctx.gfx.atoms.WM_NAME, x.Atom_.Any, buffer);
     }
 
     pub fn readPropertyBytesInto(
@@ -176,7 +176,7 @@ pub const Context = struct {
             ctx.gfx.conn,
             ctx.gfx.root,
             ctx.gfx.root,
-            ctx.gfx.atoms.net_current_desktop,
+            ctx.gfx.atoms._NET_CURRENT_DESKTOP,
             x.EventMask.of(&.{ .SubstructureRedirect, .SubstructureNotify }),
             &.{ index, @intFromEnum(x.Time.CurrentTime) },
         );
@@ -187,7 +187,7 @@ pub const Context = struct {
             ctx.gfx.conn,
             ctx.gfx.root,
             window,
-            ctx.gfx.atoms.net_active_window,
+            ctx.gfx.atoms._NET_ACTIVE_WINDOW,
             x.EventMask.of(&.{ .SubstructureRedirect, .SubstructureNotify }),
             &.{ 1, @intFromEnum(x.Time.CurrentTime) },
         );

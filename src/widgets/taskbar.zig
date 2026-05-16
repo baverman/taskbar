@@ -52,19 +52,19 @@ pub const Taskbar = struct {
         const cn = ctx.gfx.conn;
         self.windows.clearRetainingCapacity();
 
-        const current_desktop = try z.getScalarProperty(cn, ctx.gfx.root, atoms.net_current_desktop, PT.cardinal) orelse 0;
-        const reported_active_window = try z.getScalarProperty(cn, ctx.gfx.root, atoms.net_active_window, PT.window) orelse x.Window.None;
+        const current_desktop = try z.getScalarProperty(cn, ctx.gfx.root, atoms._NET_CURRENT_DESKTOP, PT.cardinal) orelse 0;
+        const reported_active_window = try z.getScalarProperty(cn, ctx.gfx.root, atoms._NET_ACTIVE_WINDOW, PT.window) orelse x.Window.None;
         self.active_window = x.Window.None;
 
-        const windows = try z.getProperty(cn, ctx.gfx.root, ctx.gfx.atoms.net_client_list, PT.window, self.windows_buf);
+        const windows = try z.getProperty(cn, ctx.gfx.root, ctx.gfx.atoms._NET_CLIENT_LIST, PT.window, self.windows_buf);
 
         for (windows) |window| {
             if (window == ctx.gfx.window) continue;
             try ctx.subscribeClientWindow(window);
-            const desktop = try z.getScalarProperty(cn, window, atoms.net_wm_desktop, PT.cardinal) orelse continue;
+            const desktop = try z.getScalarProperty(cn, window, atoms._NET_WM_DESKTOP, PT.cardinal) orelse continue;
             if (desktop != current_desktop and desktop != 0xFFFFFFFF) continue;
-            if (try ctx.hasAtomProperty(window, atoms.net_wm_window_type, atoms.net_wm_window_type_dock)) continue;
-            if (try ctx.hasAtomProperty(window, atoms.net_wm_state, atoms.net_wm_state_skip_taskbar)) continue;
+            if (try ctx.hasAtomProperty(window, atoms._NET_WM_WINDOW_TYPE, atoms._NET_WM_WINDOW_TYPE_DOCK)) continue;
+            if (try ctx.hasAtomProperty(window, atoms._NET_WM_STATE, atoms._NET_WM_STATE_SKIP_TASKBAR)) continue;
 
             var entry = WindowEntry{
                 .window = window,
@@ -79,18 +79,19 @@ pub const Taskbar = struct {
     }
 
     pub fn handleEvent(self: *Taskbar, ctx: *const common.Context, rect: common.Rect, event: *const x.Event) !common.Status {
+        const atoms = &ctx.gfx.atoms;
         switch (event.*) {
             .PropertyNotify => |property| {
                 if (property.window == ctx.gfx.window) return .{};
                 if (property.window == ctx.gfx.root) {
-                    if (property.atom != ctx.gfx.atoms.net_current_desktop and
-                        property.atom != ctx.gfx.atoms.net_client_list and
-                        property.atom != ctx.gfx.atoms.net_active_window) return .{};
-                } else if (property.atom != ctx.gfx.atoms.net_wm_name and
-                    property.atom != ctx.gfx.atoms.wm_name and
-                    property.atom != ctx.gfx.atoms.net_wm_icon_name and
-                    property.atom != ctx.gfx.atoms.net_wm_desktop and
-                    property.atom != ctx.gfx.atoms.net_wm_state) return .{};
+                    if (property.atom != atoms._NET_CURRENT_DESKTOP and
+                        property.atom != atoms._NET_CLIENT_LIST and
+                        property.atom != atoms._NET_ACTIVE_WINDOW) return .{};
+                } else if (property.atom != atoms._NET_WM_NAME and
+                    property.atom != atoms.WM_NAME and
+                    property.atom != atoms._NET_WM_ICON_NAME and
+                    property.atom != atoms._NET_WM_DESKTOP and
+                    property.atom != atoms._NET_WM_STATE) return .{};
                 return .{ .update = true };
             },
             .ButtonPress => |button| {

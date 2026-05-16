@@ -28,7 +28,6 @@ pub const App = struct {
         const root = conn.root_window;
         const root_geometry = try conn.request(x.GetGeometry, .{ .drawable = .{ .window = root } });
         const root_attrs = try conn.request(x.GetWindowAttributes, .{ .window = root });
-        const atoms = try x11.internAtoms(conn);
 
         var app = App{
             .ctx = undefined,
@@ -51,7 +50,7 @@ pub const App = struct {
                 .cairo_surface = undefined,
                 .cairo = undefined,
                 .pango_layout = undefined,
-                .atoms = atoms,
+                .atoms = try z.AtomEnum(x11.Atoms).init(conn),
             },
         };
 
@@ -181,26 +180,26 @@ pub const App = struct {
             0,
             0,
         };
-        try z.setProperty(cn, w, atoms.wm_normal_hints, PT.cardinal.as(atoms.wm_size_hints), &size_hints);
+        try z.setProperty(cn, w, atoms.WM_NORMAL_HINTS, PT.cardinal.as(atoms.WM_SIZE_HINTS), &size_hints);
 
-        try z.setProperty(cn, w, atoms.net_wm_window_type, PT.atom, &.{atoms.net_wm_window_type_dock});
-        try z.setProperty(cn, w, atoms.net_wm_desktop, PT.cardinal, &.{0xFFFFFFFF});
+        try z.setProperty(cn, w, atoms._NET_WM_WINDOW_TYPE, PT.atom, &.{atoms._NET_WM_WINDOW_TYPE_DOCK});
+        try z.setProperty(cn, w, atoms._NET_WM_DESKTOP, PT.cardinal, &.{0xFFFFFFFF});
 
         const strut = [_]u32{ 0, 0, @intCast(app.ctx.config.height), 0 };
-        try z.setProperty(cn, w, atoms.net_wm_strut, PT.cardinal, &strut);
+        try z.setProperty(cn, w, atoms._NET_WM_STRUT, PT.cardinal, &strut);
 
         const strut_partial = [_]u32{
             0, 0,                @intCast(app.ctx.config.height), 0,
             0, 0,                0,                               0,
             0, screen_width - 1, 0,                               0,
         };
-        try z.setProperty(cn, w, atoms.net_wm_strut_partial, PT.cardinal, &strut_partial);
+        try z.setProperty(cn, w, atoms._NET_WM_STRUT_PARTIAL, PT.cardinal, &strut_partial);
 
         const title = "taskbar";
-        try z.setProperty(cn, w, atoms.net_wm_name, PT.string.as(atoms.utf8_string), title);
+        try z.setProperty(cn, w, atoms._NET_WM_NAME, PT.string.as(atoms.UTF8_STRING), title);
 
         const wm_class = "taskbar\x00taskbar\x00";
-        try z.setProperty(cn, w, atoms.wm_class, PT.string, wm_class);
+        try z.setProperty(cn, w, atoms.WM_CLASS, PT.string, wm_class);
     }
 
     fn redraw(app: *App) void {

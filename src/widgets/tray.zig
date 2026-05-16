@@ -33,11 +33,11 @@ pub const Tray = struct {
             .allocator = ctx.allocator,
             .icons = .empty,
             .owner_window = ctx.gfx.window,
-            .selection_atom = ctx.gfx.atoms.net_system_tray_s0,
-            .opcode_atom = ctx.gfx.atoms.net_system_tray_opcode,
-            .xembed_atom = ctx.gfx.atoms.xembed,
-            .xembed_info_atom = ctx.gfx.atoms.xembed_info,
-            .manager_atom = ctx.gfx.atoms.manager,
+            .selection_atom = ctx.gfx.atoms._NET_SYSTEM_TRAY_S0,
+            .opcode_atom = ctx.gfx.atoms._NET_SYSTEM_TRAY_OPCODE,
+            .xembed_atom = ctx.gfx.atoms._XEMBED,
+            .xembed_info_atom = ctx.gfx.atoms._XEMBED_INFO,
+            .manager_atom = ctx.gfx.atoms.MANAGER,
             .started = false,
         };
     }
