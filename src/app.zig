@@ -157,39 +157,22 @@ pub const App = struct {
         const cn = app.ctx.gfx.conn;
 
         const screen_width: u32 = app.ctx.gfx.root_width;
-        const p_position: u32 = 1 << 2;
-        const p_min_size: u32 = 1 << 4;
-        const p_max_size: u32 = 1 << 5;
-        const size_hints = [_]u32{
-            p_position | p_min_size | p_max_size,
-            0,
-            0,
-            0,
-            0,
-            screen_width,
-            @intCast(app.ctx.config.height),
-            screen_width,
-            @intCast(app.ctx.config.height),
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-        };
+        const height: u32 = @intCast(app.ctx.config.height);
+        const size_hints = z.ewmh.SizeHints.encode(&.{
+           .{ .PPosition = .{0, 0} },
+           .{ .PMinSize = .{screen_width, height} },
+           .{ .PMaxSize = .{screen_width, height} },
+        });
         try z.setProperty(cn, w, atoms.WM_NORMAL_HINTS, PT.cardinal.as(atoms.WM_SIZE_HINTS), &size_hints);
 
         try z.setProperty(cn, w, atoms._NET_WM_WINDOW_TYPE, PT.atom, &.{atoms._NET_WM_WINDOW_TYPE_DOCK});
         try z.setProperty(cn, w, atoms._NET_WM_DESKTOP, PT.cardinal, &.{0xFFFFFFFF});
 
-        const strut = [_]u32{ 0, 0, @intCast(app.ctx.config.height), 0 };
+        const strut = [_]u32{ 0, 0, height, 0 };
         try z.setProperty(cn, w, atoms._NET_WM_STRUT, PT.cardinal, &strut);
 
         const strut_partial = [_]u32{
-            0, 0,                @intCast(app.ctx.config.height), 0,
+            0, 0,                height, 0,
             0, 0,                0,                               0,
             0, screen_width - 1, 0,                               0,
         };
