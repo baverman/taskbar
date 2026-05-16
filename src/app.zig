@@ -159,9 +159,9 @@ pub const App = struct {
         const screen_width: u32 = app.ctx.gfx.root_width;
         const height: u32 = @intCast(app.ctx.config.height);
         const size_hints = z.ewmh.SizeHints.encode(&.{
-           .{ .PPosition = .{0, 0} },
-           .{ .PMinSize = .{screen_width, height} },
-           .{ .PMaxSize = .{screen_width, height} },
+            .{ .PPosition = .{ 0, 0 } },
+            .{ .PMinSize = .{ screen_width, height } },
+            .{ .PMaxSize = .{ screen_width, height } },
         });
         try z.setProperty(cn, w, atoms.WM_NORMAL_HINTS, PT.cardinal.as(atoms.WM_SIZE_HINTS), &size_hints);
 
@@ -173,8 +173,8 @@ pub const App = struct {
 
         const strut_partial = [_]u32{
             0, 0,                height, 0,
-            0, 0,                0,                               0,
-            0, screen_width - 1, 0,                               0,
+            0, 0,                0,      0,
+            0, screen_width - 1, 0,      0,
         };
         try z.setProperty(cn, w, atoms._NET_WM_STRUT_PARTIAL, PT.cardinal, &strut_partial);
 

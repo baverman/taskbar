@@ -53,10 +53,3 @@ pub fn sendClientMessage(
         .event = try event.toBytes(),
     });
 }
-
-pub fn clientMessageDataU32(event: *const x.ClientMessageEvent, index: usize) u32 {
-    std.debug.assert(index < 5);
-    const word_start = index * @sizeOf(u32);
-    const word_bytes = event.data.raw[word_start..][0..@sizeOf(u32)];
-    return std.mem.readInt(u32, word_bytes, .little);
-}

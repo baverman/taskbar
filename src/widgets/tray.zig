@@ -85,7 +85,7 @@ pub const Tray = struct {
         switch (event.*) {
             .ClientMessage => |client| {
                 if (!self.isDockRequest(&client)) return .{};
-                const icon_window = self.dockRequestWindow(&client);
+                const icon_window: x.Window = @enumFromInt(client.data.data32[2]);
                 if (try self.dock(ctx, rect, icon_window)) {
                     return .{ .redraw = true, .relayout = true };
                 }
@@ -110,12 +110,7 @@ pub const Tray = struct {
     fn isDockRequest(self: *const Tray, event: *const x.ClientMessageEvent) bool {
         return event.type == self.opcode_atom and
             event.format == 32 and
-            x11.clientMessageDataU32(event, 1) == system_tray_request_dock;
-    }
-
-    fn dockRequestWindow(self: *const Tray, event: *const x.ClientMessageEvent) x.Window {
-        _ = self;
-        return @enumFromInt(x11.clientMessageDataU32(event, 2));
+            event.data.data32[1] == system_tray_request_dock;
     }
 
     fn dock(self: *Tray, ctx: *const common.Context, rect: common.Rect, icon_window: x.Window) !bool {
