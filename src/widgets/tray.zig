@@ -47,7 +47,7 @@ pub const Tray = struct {
         self.icons.deinit(self.allocator);
     }
 
-    pub fn update(self: *Tray, ctx: *const common.Context) !common.Status {
+    pub fn update(self: *Tray, ctx: *common.Context) !common.Status {
         if (self.started) return .{};
         try ctx.gfx.conn.request(x.SetSelectionOwner, .{
             .owner = self.owner_window,
@@ -62,7 +62,7 @@ pub const Tray = struct {
         }
 
         try x11.sendClientMessage(
-            ctx.gfx.conn,
+            &ctx.gfx.conn,
             ctx.gfx.root,
             ctx.gfx.root,
             self.manager_atom,
@@ -77,11 +77,11 @@ pub const Tray = struct {
         return self.widthFor(iconSize(self, ctx), self.config.item_gap);
     }
 
-    pub fn draw(self: *Tray, ctx: *const common.Context, rect: common.Rect) void {
-        self.relayout(ctx.gfx.conn, rect.x, trayY(), iconSize(self, ctx), self.config.item_gap);
+    pub fn draw(self: *Tray, ctx: *common.Context, rect: common.Rect) void {
+        self.relayout(&ctx.gfx.conn, rect.x, trayY(), iconSize(self, ctx), self.config.item_gap);
     }
 
-    pub fn handleEvent(self: *Tray, ctx: *const common.Context, rect: common.Rect, event: *const x.Event) !common.Status {
+    pub fn handleEvent(self: *Tray, ctx: *common.Context, rect: common.Rect, event: *const x.Event) !common.Status {
         switch (event.*) {
             .ClientMessage => |client| {
                 if (!self.isDockRequest(&client)) return .{};
@@ -113,11 +113,11 @@ pub const Tray = struct {
             event.data.data32[1] == system_tray_request_dock;
     }
 
-    fn dock(self: *Tray, ctx: *const common.Context, rect: common.Rect, icon_window: x.Window) !bool {
+    fn dock(self: *Tray, ctx: *common.Context, rect: common.Rect, icon_window: x.Window) !bool {
         const icon_size = iconSize(self, ctx);
         const icon_x = rect.x + self.widthFor(icon_size, self.config.item_gap);
-        const added = try self.addIcon(ctx.gfx.conn, ctx.gfx.window, icon_window, icon_x, trayY(), icon_size);
-        if (added) self.relayout(ctx.gfx.conn, rect.x, trayY(), icon_size, self.config.item_gap);
+        const added = try self.addIcon(&ctx.gfx.conn, ctx.gfx.window, icon_window, icon_x, trayY(), icon_size);
+        if (added) self.relayout(&ctx.gfx.conn, rect.x, trayY(), icon_size, self.config.item_gap);
         return added;
     }
 

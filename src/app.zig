@@ -24,7 +24,9 @@ pub const App = struct {
     widgets: std.ArrayList(WidgetItem),
     layout_dirty: bool,
 
-    pub fn init(allocator: std.mem.Allocator, io: std.Io, conn: *z.Connection, config: *const cfg.Config) !App {
+    pub fn init(allocator: std.mem.Allocator, io: std.Io, environ_map: *const std.process.Environ.Map, config: *const cfg.Config) !App {
+        var conn = try z.Connection.connectFromEnv(allocator, io, environ_map);
+        errdefer conn.deinit();
         const root = conn.root_window;
         const root_geometry = try conn.request(x.GetGeometry, .{ .drawable = .{ .window = root } });
         const root_attrs = try conn.request(x.GetWindowAttributes, .{ .window = root });
@@ -50,7 +52,7 @@ pub const App = struct {
                 .cairo_surface = undefined,
                 .cairo = undefined,
                 .pango_layout = undefined,
-                .atoms = try z.AtomEnum(x11.Atoms).init(conn),
+                .atoms = try z.AtomEnum(x11.Atoms).init(&conn),
             },
         };
 
@@ -70,10 +72,11 @@ pub const App = struct {
         app.widgets.deinit(app.ctx.allocator);
         c.g_object_unref(app.ctx.gfx.pango_layout);
         c.cairo_destroy(app.ctx.gfx.cairo);
-        app.ctx.gfx.cairo_surface.deinit(app.ctx.gfx.conn);
+        app.ctx.gfx.cairo_surface.deinit(&app.ctx.gfx.conn);
         if (app.ctx.gfx.window != x.Window.None) {
             _ = app.ctx.gfx.conn.request(x.DestroyWindow, .{ .window = app.ctx.gfx.window }) catch {};
         }
+        app.ctx.gfx.conn.deinit();
     }
 
     pub fn run(app: *App) !void {
@@ -114,7 +117,7 @@ pub const App = struct {
 
     fn createGraphics(app: *App) !void {
         app.ctx.gfx.cairo_surface = try cairo_mod.Surface.init(
-            app.ctx.gfx.conn,
+            &app.ctx.gfx.conn,
             app.ctx.gfx.window,
             app.ctx.gfx.root_depth,
             app.ctx.gfx.root_width,
@@ -139,7 +142,7 @@ pub const App = struct {
 
     fn mapWindow(app: *App) !void {
         try app.ctx.gfx.conn.request(x.MapWindow, .{ .window = app.ctx.gfx.window });
-        app.ctx.gfx.cairo_surface.present(app.ctx.gfx.conn);
+        app.ctx.gfx.cairo_surface.present(&app.ctx.gfx.conn);
     }
 
     fn subscribeRootChanges(app: *App) !void {
@@ -154,7 +157,7 @@ pub const App = struct {
     fn setDockProperties(app: *App) !void {
         const atoms = &app.ctx.gfx.atoms;
         const w = app.ctx.gfx.window;
-        const cn = app.ctx.gfx.conn;
+        const cn = &app.ctx.gfx.conn;
 
         const screen_width: u32 = app.ctx.gfx.root_width;
         const height: u32 = @intCast(app.ctx.config.height);
@@ -205,7 +208,7 @@ pub const App = struct {
             }
             item.dirty = false;
         }
-        app.ctx.gfx.cairo_surface.present(app.ctx.gfx.conn);
+        app.ctx.gfx.cairo_surface.present(&app.ctx.gfx.conn);
     }
 
     fn processPendingEvents(app: *App) !void {

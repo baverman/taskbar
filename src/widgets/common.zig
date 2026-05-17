@@ -23,7 +23,7 @@ pub const Status = struct {
 };
 
 pub const Gfx = struct {
-    conn: *z.Connection,
+    conn: z.Connection,
     root: x.Window,
     window: x.Window,
     root_width: u16,
@@ -125,7 +125,7 @@ pub const Context = struct {
         _ = c.cairo_restore(ctx.gfx.cairo);
     }
 
-    pub fn getWindowTitle(ctx: *const Context, window: x.Window, buffer: []u8) !?[]const u8 {
+    pub fn getWindowTitle(ctx: *Context, window: x.Window, buffer: []u8) !?[]const u8 {
         if (try ctx.readPropertyBytesInto(window, ctx.gfx.atoms._NET_WM_ICON_NAME, ctx.gfx.atoms.UTF8_STRING, buffer)) |result| {
             return result;
         }
@@ -136,13 +136,13 @@ pub const Context = struct {
     }
 
     pub fn readPropertyBytesInto(
-        ctx: *const Context,
+        ctx: *Context,
         window: x.Window,
         property: x.Atom,
         expected_type: x.Atom,
         buffer: []u8,
     ) !?[]const u8 {
-        const values = z.getProperty(ctx.gfx.conn, window, property, PT.string.as(expected_type), buffer) catch |err| switch (err) {
+        const values = z.getProperty(&ctx.gfx.conn, window, property, PT.string.as(expected_type), buffer) catch |err| switch (err) {
             error.UnexpectedType, error.UnexpectedFormat, error.PropertyTruncated => return null,
             else => return err,
         };
@@ -150,9 +150,9 @@ pub const Context = struct {
         return values;
     }
 
-    pub fn hasAtomProperty(ctx: *const Context, window: x.Window, property_atom: x.Atom, expected_atom: x.Atom) !bool {
+    pub fn hasAtomProperty(ctx: *Context, window: x.Window, property_atom: x.Atom, expected_atom: x.Atom) !bool {
         var atoms_buf: [32]x.Atom = undefined;
-        const values = z.getProperty(ctx.gfx.conn, window, property_atom, PT.atom, &atoms_buf) catch |err| switch (err) {
+        const values = z.getProperty(&ctx.gfx.conn, window, property_atom, PT.atom, &atoms_buf) catch |err| switch (err) {
             error.UnexpectedType, error.UnexpectedFormat, error.PropertyTruncated => return false,
             else => return err,
         };
@@ -162,7 +162,7 @@ pub const Context = struct {
         return false;
     }
 
-    pub fn subscribeClientWindow(ctx: *const Context, window: x.Window) !void {
+    pub fn subscribeClientWindow(ctx: *Context, window: x.Window) !void {
         try ctx.gfx.conn.request(x.ChangeWindowAttributes, .{
             .window = window,
             .value_list = .{
@@ -171,9 +171,9 @@ pub const Context = struct {
         });
     }
 
-    pub fn setCurrentDesktop(ctx: *const Context, index: u32) !void {
+    pub fn setCurrentDesktop(ctx: *Context, index: u32) !void {
         try x11.sendClientMessage(
-            ctx.gfx.conn,
+            &ctx.gfx.conn,
             ctx.gfx.root,
             ctx.gfx.root,
             ctx.gfx.atoms._NET_CURRENT_DESKTOP,
@@ -182,9 +182,9 @@ pub const Context = struct {
         );
     }
 
-    pub fn activateWindow(ctx: *const Context, window: x.Window) !void {
+    pub fn activateWindow(ctx: *Context, window: x.Window) !void {
         try x11.sendClientMessage(
-            ctx.gfx.conn,
+            &ctx.gfx.conn,
             ctx.gfx.root,
             window,
             ctx.gfx.atoms._NET_ACTIVE_WINDOW,

@@ -47,9 +47,9 @@ pub const Taskbar = struct {
         c.pango_font_description_free(self.font);
     }
 
-    pub fn update(self: *Taskbar, ctx: *const common.Context) !common.Status {
+    pub fn update(self: *Taskbar, ctx: *common.Context) !common.Status {
         const atoms = &ctx.gfx.atoms;
-        const cn = ctx.gfx.conn;
+        const cn = &ctx.gfx.conn;
         self.windows.clearRetainingCapacity();
 
         const current_desktop = try z.getScalarProperty(cn, ctx.gfx.root, atoms._NET_CURRENT_DESKTOP, PT.cardinal) orelse 0;
@@ -78,7 +78,7 @@ pub const Taskbar = struct {
         return .{ .redraw = true };
     }
 
-    pub fn handleEvent(self: *Taskbar, ctx: *const common.Context, rect: common.Rect, event: *const x.Event) !common.Status {
+    pub fn handleEvent(self: *Taskbar, ctx: *common.Context, rect: common.Rect, event: *const x.Event) !common.Status {
         const atoms = &ctx.gfx.atoms;
         switch (event.*) {
             .PropertyNotify => |property| {
@@ -130,7 +130,7 @@ pub const Taskbar = struct {
         }
     }
 
-    fn handleButtonPress(self: *Taskbar, ctx: *const common.Context, rect: common.Rect, x_pos: i32, _: i32) common.Status {
+    fn handleButtonPress(self: *Taskbar, ctx: *common.Context, rect: common.Rect, x_pos: i32, _: i32) common.Status {
         const width = self.itemWidth(rect.width);
         var left = rect.x;
         for (self.windows.items, 0..) |window, idx| {

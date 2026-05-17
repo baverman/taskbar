@@ -46,9 +46,9 @@ pub const Pager = struct {
         c.pango_font_description_free(self.font);
     }
 
-    pub fn update(self: *Pager, ctx: *const common.Context) !common.Status {
+    pub fn update(self: *Pager, ctx: *common.Context) !common.Status {
         const atoms = &ctx.gfx.atoms;
-        const cn = ctx.gfx.conn;
+        const cn = &ctx.gfx.conn;
         var old_width: i32 = 0;
         for (self.desktops.items) |desktop| old_width += desktop.title_width;
 
@@ -80,7 +80,7 @@ pub const Pager = struct {
         };
     }
 
-    pub fn handleEvent(self: *Pager, ctx: *const common.Context, rect: common.Rect, event: *const x.Event) !common.Status {
+    pub fn handleEvent(self: *Pager, ctx: *common.Context, rect: common.Rect, event: *const x.Event) !common.Status {
         const atoms = &ctx.gfx.atoms;
         switch (event.*) {
             .PropertyNotify => |property| {
@@ -137,7 +137,7 @@ pub const Pager = struct {
         }
     }
 
-    fn handleButtonPress(self: *Pager, ctx: *const common.Context, rect: common.Rect, x_pos: i32, y: i32) common.Status {
+    fn handleButtonPress(self: *Pager, ctx: *common.Context, rect: common.Rect, x_pos: i32, y: i32) common.Status {
         _ = y;
         var left = rect.x;
         for (self.desktops.items) |desktop| {
