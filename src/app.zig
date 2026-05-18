@@ -52,7 +52,7 @@ pub const App = struct {
                 .cairo_surface = undefined,
                 .cairo = undefined,
                 .pango_layout = undefined,
-                .atoms = try z.AtomEnum(x11.Atoms).init(&conn),
+                .atoms = try z.initAtoms(x11.Atoms, &conn),
             },
         };
 

@@ -5,7 +5,7 @@ pub const shm = z.shm;
 
 pub const c = @import("c");
 
-pub const Atoms = enum {
+pub const Atoms = z.AtomStruct(enum {
     MANAGER,
     _NET_ACTIVE_WINDOW,
     _NET_CLIENT_LIST,
@@ -30,7 +30,7 @@ pub const Atoms = enum {
     WM_SIZE_HINTS,
     _XEMBED,
     _XEMBED_INFO,
-};
+});
 
 pub fn sendClientMessage(
     conn: *z.Connection,

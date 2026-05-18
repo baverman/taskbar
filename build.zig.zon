@@ -7,8 +7,8 @@
             .hash = "translate_c-1.0.0-Q_BUWo75BgBmrtWsRz9QVUZlzvsSUUe_IIXD9vmWguhX",
         },
         .zix11 = .{
-            .url = "git+https://github.com/baverman/zix11.git#3f9771d7920f6acf18b26c4756ca7768c8778436",
-            .hash = "zix11-0.9.0-6Ond5_aOBQCzTebhC99-96NhpSHnw9txI5IKL6C-1umD",
+            .url = "git+https://github.com/baverman/zix11.git#ec474c151e2f748e45eb23933f988869de49f873",
+            .hash = "zix11-0.9.0-6Ond556OBQAFfwgyxD3KMyvI6LRPy9gVRWbmO_Ig5u_e",
         },
     },
     .paths = .{""},

@@ -32,7 +32,7 @@ pub const Gfx = struct {
     cairo_surface: cairo_mod.Surface,
     cairo: *c.cairo_t,
     pango_layout: *c.PangoLayout,
-    atoms: z.AtomEnum(x11.Atoms).Struct,
+    atoms: x11.Atoms,
 };
 
 pub const Context = struct {
