@@ -19,11 +19,8 @@ pub const Tray = struct {
     allocator: std.mem.Allocator,
     icons: std.ArrayList(TrayIcon),
     owner_window: x.Window,
-    selection_atom: x.Atom,
     opcode_atom: x.Atom,
     xembed_atom: x.Atom,
-    xembed_info_atom: x.Atom,
-    manager_atom: x.Atom,
     started: bool,
 
     pub fn init(ctx: *const common.Context, base_style: cfg.Style, config: cfg.Tray) Tray {
@@ -33,11 +30,8 @@ pub const Tray = struct {
             .allocator = ctx.allocator,
             .icons = .empty,
             .owner_window = ctx.gfx.window,
-            .selection_atom = ctx.gfx.atoms._NET_SYSTEM_TRAY_S0,
             .opcode_atom = ctx.gfx.atoms._NET_SYSTEM_TRAY_OPCODE,
             .xembed_atom = ctx.gfx.atoms._XEMBED,
-            .xembed_info_atom = ctx.gfx.atoms._XEMBED_INFO,
-            .manager_atom = ctx.gfx.atoms.MANAGER,
             .started = false,
         };
     }
@@ -48,14 +42,15 @@ pub const Tray = struct {
     }
 
     pub fn update(self: *Tray, ctx: *common.Context) !common.Status {
+        const atoms = &ctx.gfx.atoms;
         if (self.started) return .{};
         try ctx.gfx.conn.request(x.SetSelectionOwner, .{
             .owner = self.owner_window,
-            .selection = self.selection_atom,
+            .selection = atoms._NET_SYSTEM_TRAY_S0,
             .time = @intFromEnum(x.Time.CurrentTime),
         });
         const owner = try ctx.gfx.conn.request(x.GetSelectionOwner, .{
-            .selection = self.selection_atom,
+            .selection = atoms._NET_SYSTEM_TRAY_S0,
         });
         if (owner.owner != self.owner_window) {
             return error.TraySelectionUnavailable;
@@ -65,9 +60,9 @@ pub const Tray = struct {
             &ctx.gfx.conn,
             ctx.gfx.root,
             ctx.gfx.root,
-            self.manager_atom,
+            atoms.MANAGER,
             x.EventMask.of(&.{.StructureNotify}),
-            &.{ @intFromEnum(x.Time.CurrentTime), @intFromEnum(self.selection_atom), @intFromEnum(self.owner_window) },
+            &.{ @intFromEnum(x.Time.CurrentTime), @intFromEnum(atoms._NET_SYSTEM_TRAY_S0), @intFromEnum(self.owner_window) },
         );
         self.started = true;
         return .{};
@@ -131,7 +126,12 @@ pub const Tray = struct {
         icon_size: i32,
     ) !bool {
         if (self.contains(icon_window)) return false;
-        if (!embedIconWindow(conn, panel_window, icon_window, panel_x, panel_y, icon_size)) return false;
+        embedIconWindow(conn, panel_window, icon_window, panel_x, panel_y, icon_size) catch |err| {
+            switch (conn.lastError(err)) {
+                .Window => return false,
+                else => return err,
+            }
+        };
         try self.icons.append(self.allocator, .{ .window = icon_window });
         try self.sendXEmbedEmbeddedNotify(conn, icon_window);
         return true;
@@ -151,10 +151,18 @@ pub const Tray = struct {
         var idx: usize = 0;
         while (idx < self.icons.items.len) {
             const icon = self.icons.items[idx];
-            if (!moveResizeMapIcon(conn, icon.window, x_pos, start_y, icon_size)) {
-                _ = self.icons.orderedRemove(idx);
-                continue;
-            }
+            moveResizeMapIcon(conn, icon.window, x_pos, start_y, icon_size) catch |err| {
+                switch (conn.lastError(err)) {
+                    .Window => {
+                        _ = self.icons.orderedRemove(idx);
+                        continue;
+                    },
+                    else => {
+                        _ = self.icons.orderedRemove(idx);
+                        std.debug.print("Error while resizing icon window 0x{x}: {any}\n", .{icon.window, err});
+                    },
+                }
+            };
             x_pos += icon_size + item_gap;
             idx += 1;
         }
@@ -187,8 +195,8 @@ fn iconSize(self: *const Tray, ctx: *const common.Context) i32 {
     return self.config.icon_size orelse (ctx.config.height - tray_inset_y * 2);
 }
 
-fn moveResizeMapIcon(conn: *x11.z.Connection, icon_window: x.Window, x_pos: i32, y_pos: i32, size: i32) bool {
-    conn.request(x.ConfigureWindow, .{
+fn moveResizeMapIcon(conn: *x11.z.Connection, icon_window: x.Window, x_pos: i32, y_pos: i32, size: i32) !void {
+    try conn.request(x.ConfigureWindow, .{
         .window = icon_window,
         .value_list = .{
             .x = x_pos,
@@ -196,9 +204,8 @@ fn moveResizeMapIcon(conn: *x11.z.Connection, icon_window: x.Window, x_pos: i32,
             .width = @intCast(size),
             .height = @intCast(size),
         },
-    }) catch |err| return trayBadWindowTolerated(conn, err);
-    conn.request(x.MapWindow, .{ .window = icon_window }) catch |err| return trayBadWindowTolerated(conn, err);
-    return true;
+    });
+    try conn.request(x.MapWindow, .{ .window = icon_window });
 }
 
 fn embedIconWindow(
@@ -208,23 +215,18 @@ fn embedIconWindow(
     panel_x: i32,
     panel_y: i32,
     icon_size: i32,
-) bool {
-    conn.request(x.ChangeWindowAttributes, .{
+) !void {
+    try conn.request(x.ChangeWindowAttributes, .{
         .window = icon_window,
         .value_list = .{
             .event_mask = x.EventMask.of(&.{ .StructureNotify, .PropertyChange }),
         },
-    }) catch |err| return trayBadWindowTolerated(conn, err);
-    conn.request(x.ReparentWindow, .{
+    });
+    try conn.request(x.ReparentWindow, .{
         .window = icon_window,
         .parent = panel_window,
         .x = @intCast(panel_x),
         .y = @intCast(panel_y),
-    }) catch |err| return trayBadWindowTolerated(conn, err);
-    return moveResizeMapIcon(conn, icon_window, panel_x, panel_y, icon_size);
-}
-
-fn trayBadWindowTolerated(conn: *x11.z.Connection, err: anyerror) bool {
-    if (err != error.X11ProtocolError) return false;
-    return conn.lastError().code == .Window;
+    });
+    try moveResizeMapIcon(conn, icon_window, panel_x, panel_y, icon_size);
 }

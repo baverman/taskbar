@@ -1,11 +1,11 @@
 const std = @import("std");
 pub const z = @import("zix11");
-pub const x = z.xproto;
-pub const shm = z.shm;
+pub const x = z.x;
+pub const shm = z.ext.shm;
 
 pub const c = @import("c");
 
-pub const Atoms = z.AtomStruct(enum {
+pub const Atoms = z.atoms.AtomStruct(enum {
     MANAGER,
     _NET_ACTIVE_WINDOW,
     _NET_CLIENT_LIST,
@@ -44,7 +44,7 @@ pub fn sendClientMessage(
         .format = 32,
         .window = window,
         .type = message_type,
-        .data = z.clientMessageData(u32, data),
+        .data = z.events.clientMessageData(u32, data),
     };
     try conn.request(x.SendEvent, .{
         .propagate = false,

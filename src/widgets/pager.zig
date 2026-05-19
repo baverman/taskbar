@@ -1,10 +1,10 @@
 const std = @import("std");
 const cfg = @import("../config.zig");
 const x11 = @import("../x11.zig");
+const zix11 = @import("zix11");
 const common = @import("common.zig");
 const c = x11.c;
 const x = x11.x;
-const PT = x11.z.PropertyType;
 
 const max_names_len = 1024;
 const max_fallback_name_len = 32;
@@ -54,8 +54,8 @@ pub const Pager = struct {
 
         self.desktops.clearRetainingCapacity();
 
-        const desktop_count = try x11.z.getScalarProperty(cn, ctx.gfx.root, atoms._NET_NUMBER_OF_DESKTOPS, PT.cardinal) orelse 1;
-        self.current_desktop = try x11.z.getScalarProperty(cn, ctx.gfx.root, atoms._NET_CURRENT_DESKTOP, PT.cardinal) orelse 0;
+        const desktop_count = try zix11.properties.get(cn, ctx.gfx.root, atoms._NET_NUMBER_OF_DESKTOPS, u32) orelse 1;
+        self.current_desktop = try zix11.properties.get(cn, ctx.gfx.root, atoms._NET_CURRENT_DESKTOP, u32) orelse 0;
 
         const names_data = try ctx.readPropertyBytesInto(
             ctx.gfx.root,

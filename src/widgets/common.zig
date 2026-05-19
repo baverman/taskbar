@@ -6,7 +6,6 @@ const c = x11.c;
 const x = x11.x;
 const z = x11.z;
 const utils = @import("../utils.zig");
-const PT = z.PropertyType;
 
 pub const Rect = struct {
     x: i32,
@@ -142,7 +141,7 @@ pub const Context = struct {
         expected_type: x.Atom,
         buffer: []u8,
     ) !?[]const u8 {
-        const values = z.getProperty(&ctx.gfx.conn, window, property, PT.string.as(expected_type), buffer) catch |err| switch (err) {
+        const values = z.properties.getAs(&ctx.gfx.conn, window, property, expected_type, buffer) catch |err| switch (err) {
             error.UnexpectedType, error.UnexpectedFormat, error.PropertyTruncated => return null,
             else => return err,
         };
@@ -152,7 +151,7 @@ pub const Context = struct {
 
     pub fn hasAtomProperty(ctx: *Context, window: x.Window, property_atom: x.Atom, expected_atom: x.Atom) !bool {
         var atoms_buf: [32]x.Atom = undefined;
-        const values = z.getProperty(&ctx.gfx.conn, window, property_atom, PT.atom, &atoms_buf) catch |err| switch (err) {
+        const values = z.properties.get(&ctx.gfx.conn, window, property_atom, &atoms_buf) catch |err| switch (err) {
             error.UnexpectedType, error.UnexpectedFormat, error.PropertyTruncated => return false,
             else => return err,
         };

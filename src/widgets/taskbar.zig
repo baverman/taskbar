@@ -6,7 +6,6 @@ const c = x11.c;
 const x = x11.x;
 const z = x11.z;
 const utils = @import("../utils.zig");
-const PT = z.PropertyType;
 
 const max_title_len = 512;
 
@@ -52,16 +51,16 @@ pub const Taskbar = struct {
         const cn = &ctx.gfx.conn;
         self.windows.clearRetainingCapacity();
 
-        const current_desktop = try z.getScalarProperty(cn, ctx.gfx.root, atoms._NET_CURRENT_DESKTOP, PT.cardinal) orelse 0;
-        const reported_active_window = try z.getScalarProperty(cn, ctx.gfx.root, atoms._NET_ACTIVE_WINDOW, PT.window) orelse x.Window.None;
+        const current_desktop = try z.properties.get(cn, ctx.gfx.root, atoms._NET_CURRENT_DESKTOP, u32) orelse 0;
+        const reported_active_window = try z.properties.get(cn, ctx.gfx.root, atoms._NET_ACTIVE_WINDOW, x.Window) orelse x.Window.None;
         self.active_window = x.Window.None;
 
-        const windows = try z.getProperty(cn, ctx.gfx.root, ctx.gfx.atoms._NET_CLIENT_LIST, PT.window, self.windows_buf);
+        const windows = try z.properties.get(cn, ctx.gfx.root, ctx.gfx.atoms._NET_CLIENT_LIST, self.windows_buf);
 
         for (windows) |window| {
             if (window == ctx.gfx.window) continue;
             try ctx.subscribeClientWindow(window);
-            const desktop = try z.getScalarProperty(cn, window, atoms._NET_WM_DESKTOP, PT.cardinal) orelse continue;
+            const desktop = try z.properties.get(cn, window, atoms._NET_WM_DESKTOP, u32) orelse continue;
             if (desktop != current_desktop and desktop != 0xFFFFFFFF) continue;
             if (try ctx.hasAtomProperty(window, atoms._NET_WM_WINDOW_TYPE, atoms._NET_WM_WINDOW_TYPE_DOCK)) continue;
             if (try ctx.hasAtomProperty(window, atoms._NET_WM_STATE, atoms._NET_WM_STATE_SKIP_TASKBAR)) continue;

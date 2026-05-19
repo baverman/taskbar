@@ -8,7 +8,6 @@ const widget_mod = @import("widgets/widget.zig");
 const c = x11.c;
 const x = x11.x;
 const z = x11.z;
-const PT = z.PropertyType;
 
 const WidgetItem = struct {
     widget: widget_mod.Widget,
@@ -52,7 +51,7 @@ pub const App = struct {
                 .cairo_surface = undefined,
                 .cairo = undefined,
                 .pango_layout = undefined,
-                .atoms = try z.initAtoms(x11.Atoms, &conn),
+                .atoms = try z.atoms.getAll(x11.Atoms, &conn),
             },
         };
 
@@ -166,26 +165,23 @@ pub const App = struct {
             .{ .PMinSize = .{ screen_width, height } },
             .{ .PMaxSize = .{ screen_width, height } },
         });
-        try z.setProperty(cn, w, atoms.WM_NORMAL_HINTS, PT.cardinal.as(atoms.WM_SIZE_HINTS), &size_hints);
+        try z.properties.setAs(cn, w, atoms.WM_NORMAL_HINTS, atoms.WM_SIZE_HINTS, &size_hints);
 
-        try z.setProperty(cn, w, atoms._NET_WM_WINDOW_TYPE, PT.atom, &.{atoms._NET_WM_WINDOW_TYPE_DOCK});
-        try z.setProperty(cn, w, atoms._NET_WM_DESKTOP, PT.cardinal, &.{0xFFFFFFFF});
+        try z.properties.set(cn, w, atoms._NET_WM_WINDOW_TYPE, atoms._NET_WM_WINDOW_TYPE_DOCK);
+        try z.properties.set(cn, w, atoms._NET_WM_DESKTOP, @as(u32, 0xFFFFFFFF));
 
         const strut = [_]u32{ 0, 0, height, 0 };
-        try z.setProperty(cn, w, atoms._NET_WM_STRUT, PT.cardinal, &strut);
+        try z.properties.set(cn, w, atoms._NET_WM_STRUT, &strut);
 
         const strut_partial = [_]u32{
             0, 0,                height, 0,
             0, 0,                0,      0,
             0, screen_width - 1, 0,      0,
         };
-        try z.setProperty(cn, w, atoms._NET_WM_STRUT_PARTIAL, PT.cardinal, &strut_partial);
+        try z.properties.set(cn, w, atoms._NET_WM_STRUT_PARTIAL, &strut_partial);
 
-        const title = "taskbar";
-        try z.setProperty(cn, w, atoms._NET_WM_NAME, PT.string.as(atoms.UTF8_STRING), title);
-
-        const wm_class = "taskbar\x00taskbar\x00";
-        try z.setProperty(cn, w, atoms.WM_CLASS, PT.string, wm_class);
+        try z.properties.setAs(cn, w, atoms._NET_WM_NAME, atoms.UTF8_STRING, "taskbar");
+        try z.properties.setAs(cn, w, atoms.WM_CLASS, x.Atom.STRING, "taskbar\x00taskbar\x00");
     }
 
     fn redraw(app: *App) void {
