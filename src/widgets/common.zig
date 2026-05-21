@@ -162,7 +162,7 @@ pub const Context = struct {
     }
 
     pub fn subscribeClientWindow(ctx: *Context, window: x.Window) !void {
-        try ctx.gfx.conn.request(x.ChangeWindowAttributes, .{
+        return ctx.gfx.conn.request(x.ChangeWindowAttributes, .{
             .window = window,
             .value_list = .{
                 .event_mask = x.EventMask.of(&.{ .PropertyChange, .StructureNotify }),

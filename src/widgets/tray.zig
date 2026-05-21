@@ -159,7 +159,7 @@ pub const Tray = struct {
                     },
                     else => {
                         _ = self.icons.orderedRemove(idx);
-                        std.debug.print("Error while resizing icon window 0x{x}: {any}\n", .{icon.window, err});
+                        std.debug.print("Error while resizing icon window 0x{x}: {any}\n", .{ icon.window, err });
                     },
                 }
             };

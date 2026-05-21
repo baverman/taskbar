@@ -59,22 +59,32 @@ pub const Taskbar = struct {
 
         for (windows) |window| {
             if (window == ctx.gfx.window) continue;
-            try ctx.subscribeClientWindow(window);
-            const desktop = try z.properties.get(cn, window, atoms._NET_WM_DESKTOP, u32) orelse continue;
-            if (desktop != current_desktop and desktop != 0xFFFFFFFF) continue;
-            if (try ctx.hasAtomProperty(window, atoms._NET_WM_WINDOW_TYPE, atoms._NET_WM_WINDOW_TYPE_DOCK)) continue;
-            if (try ctx.hasAtomProperty(window, atoms._NET_WM_STATE, atoms._NET_WM_STATE_SKIP_TASKBAR)) continue;
-
-            var entry = WindowEntry{
-                .window = window,
-                .desktop = desktop,
-            };
-            const title = try ctx.getWindowTitle(window, &entry.title_buf) orelse utils.fillString(&entry.title_buf, "noname");
-            entry.title_len = title.len;
+            const entry = getWindowEntry(ctx, current_desktop, window) catch |err| switch (ctx.gfx.conn.lastError(err)) {
+                .Window => continue,
+                else => return err,
+            } orelse continue;
             try self.windows.append(ctx.allocator, entry);
             if (window == reported_active_window) self.active_window = window;
         }
         return .{ .redraw = true };
+    }
+
+    pub fn getWindowEntry(ctx: *common.Context, current_desktop: u32, window: x.Window) !?WindowEntry {
+        const atoms = &ctx.gfx.atoms;
+        const cn = &ctx.gfx.conn;
+        try ctx.subscribeClientWindow(window);
+        const desktop = try z.properties.get(cn, window, atoms._NET_WM_DESKTOP, u32) orelse return null;
+        if (desktop != current_desktop and desktop != 0xFFFFFFFF) return null;
+        if (try ctx.hasAtomProperty(window, atoms._NET_WM_WINDOW_TYPE, atoms._NET_WM_WINDOW_TYPE_DOCK)) return null;
+        if (try ctx.hasAtomProperty(window, atoms._NET_WM_STATE, atoms._NET_WM_STATE_SKIP_TASKBAR)) return null;
+
+        var entry = WindowEntry{
+            .window = window,
+            .desktop = desktop,
+        };
+        const title = try ctx.getWindowTitle(window, &entry.title_buf) orelse utils.fillString(&entry.title_buf, "noname");
+        entry.title_len = title.len;
+        return entry;
     }
 
     pub fn handleEvent(self: *Taskbar, ctx: *common.Context, rect: common.Rect, event: *const x.Event) !common.Status {
