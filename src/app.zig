@@ -37,14 +37,14 @@ pub const App = struct {
             .config = config,
             .current_time_ms = currentTimeMs(io),
             .gfx = try .init(allocator, io, environ_map),
+            .draw = undefined,
         };
 
         errdefer app.ctx.gfx.deinit();
 
         try app.createWindow();
-        try app.createGraphics();
+        app.ctx.draw = try .init(&app.ctx.gfx, config);
         try app.initLayout();
-
         try app.setDockProperties();
         try app.subscribeRootChanges();
         try app.mapWindow();
@@ -55,9 +55,9 @@ pub const App = struct {
     pub fn deinit(app: *App) void {
         for (app.widgets.items) |*item| item.widget.deinit(&app.ctx);
         app.widgets.deinit(app.ctx.allocator);
-        c.g_object_unref(app.ctx.gfx.pango_layout);
-        c.cairo_destroy(app.ctx.gfx.cairo);
-        app.ctx.gfx.cairo_surface.deinit(&app.ctx.gfx.conn);
+        c.g_object_unref(app.ctx.draw.pango_layout);
+        c.cairo_destroy(app.ctx.draw.cairo);
+        app.ctx.draw.surface.deinit(&app.ctx.gfx.conn);
         if (app.ctx.gfx.window != x.Window.None) {
             _ = app.ctx.gfx.conn.request(x.DestroyWindow, .{ .window = app.ctx.gfx.window }) catch {};
         }
@@ -100,18 +100,6 @@ pub const App = struct {
         app.ctx.gfx.window = window;
     }
 
-    fn createGraphics(app: *App) !void {
-        app.ctx.gfx.cairo_surface = try cairo_mod.Surface.init(
-            &app.ctx.gfx.conn,
-            app.ctx.gfx.window,
-            app.ctx.gfx.root_depth,
-            app.ctx.gfx.root_width,
-            @intCast(app.ctx.config.height),
-        );
-        app.ctx.gfx.cairo = c.cairo_create(app.ctx.gfx.cairo_surface.surface()) orelse return error.CairoCreateFailed;
-        app.ctx.gfx.pango_layout = c.pango_cairo_create_layout(app.ctx.gfx.cairo) orelse return error.PangoLayoutCreateFailed;
-    }
-
     fn initLayout(app: *App) !void {
         for (app.ctx.config.widgets) |widget_cfg| {
             try app.widgets.append(app.ctx.allocator, .{
@@ -127,7 +115,7 @@ pub const App = struct {
 
     fn mapWindow(app: *App) !void {
         try app.ctx.gfx.conn.request(x.MapWindow, .{ .window = app.ctx.gfx.window });
-        app.ctx.gfx.cairo_surface.present(&app.ctx.gfx.conn);
+        app.ctx.draw.surface.present(&app.ctx.gfx.conn);
     }
 
     fn subscribeRootChanges(app: *App) !void {
@@ -190,7 +178,7 @@ pub const App = struct {
             }
             item.dirty = false;
         }
-        app.ctx.gfx.cairo_surface.present(&app.ctx.gfx.conn);
+        app.ctx.draw.surface.present(&app.ctx.gfx.conn);
     }
 
     fn processPendingEvents(app: *App) !void {

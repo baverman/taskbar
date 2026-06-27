@@ -28,9 +28,6 @@ pub const Gfx = struct {
     root_width: u16,
     root_depth: u8,
     root_visual: u32,
-    cairo_surface: cairo_mod.Surface,
-    cairo: *c.cairo_t,
-    pango_layout: *c.PangoLayout,
     atoms: x11.Atoms,
 
     pub fn init(allocator: std.mem.Allocator, io: std.Io, environ_map: *const std.process.Environ.Map) !@This() {
@@ -49,9 +46,6 @@ pub const Gfx = struct {
             .root_width = root_geometry.width,
             .root_depth = root_geometry.depth,
             .root_visual = root_attrs.visual,
-            .cairo_surface = undefined,
-            .cairo = undefined,
-            .pango_layout = undefined,
             .atoms = atoms,
         };
     }
@@ -62,11 +56,34 @@ pub const Gfx = struct {
     }
 };
 
+pub const Draw = struct {
+    surface: cairo_mod.Surface,
+    cairo: *c.cairo_t,
+    pango_layout: *c.PangoLayout,
+
+    pub fn init(gfx: *Gfx, config: *const cfg.Config) !@This() {
+        const surface = try cairo_mod.Surface.init(
+            &gfx.conn,
+            gfx.window,
+            gfx.root_depth,
+            gfx.root_width,
+            @intCast(config.height),
+        );
+        const cairo = c.cairo_create(surface.surface()) orelse return error.CairoCreateFailed;
+        return .{
+            .surface = surface,
+            .cairo = cairo,
+            .pango_layout = c.pango_cairo_create_layout(cairo) orelse return error.PangoLayoutCreateFailed,
+        };
+    }
+};
+
 pub const Context = struct {
     allocator: std.mem.Allocator,
     io: std.Io,
     config: *const cfg.Config,
     gfx: Gfx,
+    draw: Draw,
     current_time_ms: i64,
 
     pub fn panelWidth(ctx: *const Context) i32 {
@@ -81,20 +98,20 @@ pub const Context = struct {
     }
 
     pub fn fillRect(ctx: *const Context, color: u32, rect: Rect) void {
-        setSourceColor(ctx.gfx.cairo, color);
+        setSourceColor(ctx.draw.cairo, color);
         c.cairo_rectangle(
-            ctx.gfx.cairo,
+            ctx.draw.cairo,
             @floatFromInt(rect.x),
             @floatFromInt(rect.y),
             @floatFromInt(rect.width),
             @floatFromInt(rect.height),
         );
-        _ = c.cairo_fill(ctx.gfx.cairo);
+        _ = c.cairo_fill(ctx.draw.cairo);
     }
 
     pub fn measureText(ctx: *const Context, font: *c.PangoFontDescription, text: []const u8) i32 {
         if (text.len == 0) return 0;
-        const layout = ctx.gfx.pango_layout;
+        const layout = ctx.draw.pango_layout;
         c.pango_layout_set_font_description(layout, font);
         c.pango_layout_set_text(layout, text.ptr, @intCast(text.len));
         c.pango_layout_set_width(layout, -1);
@@ -121,7 +138,7 @@ pub const Context = struct {
         ellipsize: bool,
     ) void {
         if (text.len == 0 or rect.width <= 0 or rect.height <= 0) return;
-        const layout = ctx.gfx.pango_layout;
+        const layout = ctx.draw.pango_layout;
         c.pango_layout_set_font_description(layout, font);
         c.pango_layout_set_text(layout, text.ptr, @intCast(text.len));
         c.pango_layout_set_width(layout, rect.width * c.PANGO_SCALE);
@@ -137,19 +154,19 @@ pub const Context = struct {
         c.pango_layout_get_pixel_size(layout, &text_width, &text_height);
         const y = rect.y + @divFloor(@max(0, rect.height - text_height), 2) + text_offset;
 
-        _ = c.cairo_save(ctx.gfx.cairo);
+        _ = c.cairo_save(ctx.draw.cairo);
         c.cairo_rectangle(
-            ctx.gfx.cairo,
+            ctx.draw.cairo,
             @floatFromInt(rect.x),
             @floatFromInt(rect.y),
             @floatFromInt(rect.width),
             @floatFromInt(rect.height),
         );
-        c.cairo_clip(ctx.gfx.cairo);
-        setSourceColor(ctx.gfx.cairo, color_rgb);
-        c.cairo_move_to(ctx.gfx.cairo, @floatFromInt(rect.x), @floatFromInt(y));
-        c.pango_cairo_show_layout(ctx.gfx.cairo, layout);
-        _ = c.cairo_restore(ctx.gfx.cairo);
+        c.cairo_clip(ctx.draw.cairo);
+        setSourceColor(ctx.draw.cairo, color_rgb);
+        c.cairo_move_to(ctx.draw.cairo, @floatFromInt(rect.x), @floatFromInt(y));
+        c.pango_cairo_show_layout(ctx.draw.cairo, layout);
+        _ = c.cairo_restore(ctx.draw.cairo);
     }
 
     pub fn getWindowTitle(ctx: *Context, window: x.Window, buffer: []u8) !?[]const u8 {

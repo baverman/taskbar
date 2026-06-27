@@ -120,7 +120,7 @@ pub const Surface = struct {
         }) catch {};
     }
 
-    pub fn surface(self: *Surface) *c.cairo_surface_t {
+    pub fn surface(self: *const Surface) *c.cairo_surface_t {
         return self.cairo_surface orelse unreachable;
     }
 
