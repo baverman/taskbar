@@ -8,6 +8,7 @@ const widget_mod = @import("widgets/widget.zig");
 const c = x11.c;
 const x = x11.x;
 const z = x11.z;
+const move = @import("utils.zig").move;
 
 const WidgetItem = struct {
     widget: widget_mod.Widget,
@@ -24,11 +25,16 @@ pub const App = struct {
     layout_dirty: bool,
 
     pub fn init(allocator: std.mem.Allocator, io: std.Io, environ_map: *const std.process.Environ.Map, config: *const cfg.Config) !App {
-        var conn = try z.Connection.connectFromEnv(allocator, io, environ_map);
-        errdefer conn.deinit();
-        const root = conn.root_window;
+        var conn_moved = false;
+        var conn = try z.Connection.init(allocator, io);
+        errdefer {
+            if (!conn_moved) conn.deinit();
+        }
+        try conn.connectFromEnv(environ_map);
+        const root = conn.rootWindow();
         const root_geometry = try conn.request(x.GetGeometry, .{ .drawable = .{ .window = root } });
         const root_attrs = try conn.request(x.GetWindowAttributes, .{ .window = root });
+        const atoms = try z.atoms.getAll(x11.Atoms, &conn);
 
         var app = App{
             .ctx = undefined,
@@ -42,7 +48,7 @@ pub const App = struct {
             .config = config,
             .current_time_ms = currentTimeMs(io),
             .gfx = .{
-                .conn = conn,
+                .conn = move(&conn_moved, &conn),
                 .root = root,
                 .window = x.Window.None,
                 .root_width = root_geometry.width,
@@ -51,9 +57,11 @@ pub const App = struct {
                 .cairo_surface = undefined,
                 .cairo = undefined,
                 .pango_layout = undefined,
-                .atoms = try z.atoms.getAll(x11.Atoms, &conn),
+                .atoms = atoms,
             },
         };
+
+        errdefer app.ctx.gfx.conn.deinit();
 
         try app.createWindow();
         try app.createGraphics();
@@ -218,7 +226,7 @@ pub const App = struct {
         }
     }
 
-    fn handleEvent(app: *App, event: *const x.Event) !void {
+    fn handleEvent(app: *App, event: *const z.events.Event) !void {
         for (app.widgets.items) |*item| {
             if (event.* == .ButtonPress and
                 (event.ButtonPress.event_x < item.rect.x or event.ButtonPress.event_x > item.rect.x + item.rect.width))

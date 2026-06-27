@@ -80,7 +80,7 @@ pub const Pager = struct {
         };
     }
 
-    pub fn handleEvent(self: *Pager, ctx: *common.Context, rect: common.Rect, event: *const x.Event) !common.Status {
+    pub fn handleEvent(self: *Pager, ctx: *common.Context, rect: common.Rect, event: *const zix11.events.Event) !common.Status {
         const atoms = &ctx.gfx.atoms;
         switch (event.*) {
             .PropertyNotify => |property| {

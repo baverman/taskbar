@@ -131,7 +131,7 @@ pub const Context = struct {
         if (try ctx.readPropertyBytesInto(window, ctx.gfx.atoms._NET_WM_NAME, ctx.gfx.atoms.UTF8_STRING, buffer)) |result| {
             return result;
         }
-        return try ctx.readPropertyBytesInto(window, ctx.gfx.atoms.WM_NAME, x.Atom_.Any, buffer);
+        return try ctx.readPropertyBytesInto(window, ctx.gfx.atoms.WM_NAME, x.Atom.Any, buffer);
     }
 
     pub fn readPropertyBytesInto(

@@ -4,6 +4,7 @@ const common = @import("common.zig");
 const x11 = @import("../x11.zig");
 const c = x11.c;
 const x = x11.x;
+const z = @import("zix11");
 
 const tray_inset_y = 4;
 const xembed_embedded_notify: u32 = 0;
@@ -76,11 +77,11 @@ pub const Tray = struct {
         self.relayout(&ctx.gfx.conn, rect.x, trayY(), iconSize(self, ctx), self.config.item_gap);
     }
 
-    pub fn handleEvent(self: *Tray, ctx: *common.Context, rect: common.Rect, event: *const x.Event) !common.Status {
+    pub fn handleEvent(self: *Tray, ctx: *common.Context, rect: common.Rect, event: *const z.events.Event) !common.Status {
         switch (event.*) {
             .ClientMessage => |client| {
                 if (!self.isDockRequest(&client)) return .{};
-                const icon_window: x.Window = @enumFromInt(client.data.data32[2]);
+                const icon_window: x.Window = @enumFromInt((try client.data.asData32())[2]);
                 if (try self.dock(ctx, rect, icon_window)) {
                     return .{ .redraw = true, .relayout = true };
                 }
@@ -105,7 +106,7 @@ pub const Tray = struct {
     fn isDockRequest(self: *const Tray, event: *const x.ClientMessageEvent) bool {
         return event.type == self.opcode_atom and
             event.format == 32 and
-            event.data.data32[1] == system_tray_request_dock;
+            (event.data.asData32() catch unreachable)[1] == system_tray_request_dock;
     }
 
     fn dock(self: *Tray, ctx: *common.Context, rect: common.Rect, icon_window: x.Window) !bool {

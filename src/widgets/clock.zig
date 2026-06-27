@@ -4,6 +4,7 @@ const common = @import("common.zig");
 const x11 = @import("../x11.zig");
 const c = x11.c;
 const x = x11.x;
+const z = @import("zix11");
 
 pub const Clock = struct {
     config: cfg.Clock,
@@ -62,7 +63,7 @@ pub const Clock = struct {
         );
     }
 
-    pub fn handleEvent(_: *Clock, _: *const common.Context, _: common.Rect, _: *const x.Event) !common.Status {
+    pub fn handleEvent(_: *Clock, _: *const common.Context, _: common.Rect, _: *const z.events.Event) !common.Status {
         return .{};
     }
 
