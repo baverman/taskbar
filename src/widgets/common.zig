@@ -32,6 +32,34 @@ pub const Gfx = struct {
     cairo: *c.cairo_t,
     pango_layout: *c.PangoLayout,
     atoms: x11.Atoms,
+
+    pub fn init(allocator: std.mem.Allocator, io: std.Io, environ_map: *const std.process.Environ.Map) !@This() {
+        var conn = try z.Connection.init(allocator, io);
+        errdefer conn.deinit();
+        try conn.connectFromEnv(environ_map);
+        const root = conn.rootWindow();
+        const root_geometry = try conn.request(x.GetGeometry, .{ .drawable = .{ .window = root } });
+        const root_attrs = try conn.request(x.GetWindowAttributes, .{ .window = root });
+        const atoms = try z.atoms.getAll(x11.Atoms, &conn);
+
+        return .{
+            .conn = conn,
+            .root = root,
+            .window = x.Window.None,
+            .root_width = root_geometry.width,
+            .root_depth = root_geometry.depth,
+            .root_visual = root_attrs.visual,
+            .cairo_surface = undefined,
+            .cairo = undefined,
+            .pango_layout = undefined,
+            .atoms = atoms,
+        };
+    }
+
+    pub fn deinit(self: *@This()) void {
+        self.conn.deinit();
+        self.* = undefined;
+    }
 };
 
 pub const Context = struct {

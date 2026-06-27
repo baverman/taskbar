@@ -25,17 +25,6 @@ pub const App = struct {
     layout_dirty: bool,
 
     pub fn init(allocator: std.mem.Allocator, io: std.Io, environ_map: *const std.process.Environ.Map, config: *const cfg.Config) !App {
-        var conn_moved = false;
-        var conn = try z.Connection.init(allocator, io);
-        errdefer {
-            if (!conn_moved) conn.deinit();
-        }
-        try conn.connectFromEnv(environ_map);
-        const root = conn.rootWindow();
-        const root_geometry = try conn.request(x.GetGeometry, .{ .drawable = .{ .window = root } });
-        const root_attrs = try conn.request(x.GetWindowAttributes, .{ .window = root });
-        const atoms = try z.atoms.getAll(x11.Atoms, &conn);
-
         var app = App{
             .ctx = undefined,
             .widgets = .empty,
@@ -47,21 +36,10 @@ pub const App = struct {
             .io = io,
             .config = config,
             .current_time_ms = currentTimeMs(io),
-            .gfx = .{
-                .conn = move(&conn_moved, &conn),
-                .root = root,
-                .window = x.Window.None,
-                .root_width = root_geometry.width,
-                .root_depth = root_geometry.depth,
-                .root_visual = root_attrs.visual,
-                .cairo_surface = undefined,
-                .cairo = undefined,
-                .pango_layout = undefined,
-                .atoms = atoms,
-            },
+            .gfx = try .init(allocator, io, environ_map),
         };
 
-        errdefer app.ctx.gfx.conn.deinit();
+        errdefer app.ctx.gfx.deinit();
 
         try app.createWindow();
         try app.createGraphics();
