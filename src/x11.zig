@@ -31,6 +31,7 @@ pub const Atoms = z.atoms.AtomStruct(enum {
     _XEMBED,
     _XEMBED_INFO,
     _ORCSOME_SKIP_TASKBAR,
+    _ORCSOME_STATE,
 });
 
 pub fn sendClientMessage(

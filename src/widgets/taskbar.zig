@@ -77,7 +77,7 @@ pub const Taskbar = struct {
         if (desktop != current_desktop and desktop != 0xFFFFFFFF) return null;
         if (try ctx.hasAtomProperty(window, atoms._NET_WM_WINDOW_TYPE, atoms._NET_WM_WINDOW_TYPE_DOCK)) return null;
         if (try ctx.hasAtomProperty(window, atoms._NET_WM_STATE, atoms._NET_WM_STATE_SKIP_TASKBAR)) return null;
-        if (try ctx.hasAtomProperty(window, atoms._NET_WM_STATE, atoms._ORCSOME_SKIP_TASKBAR)) return null;
+        if (try ctx.hasAtomProperty(window, atoms._ORCSOME_STATE, atoms._ORCSOME_SKIP_TASKBAR)) return null;
 
         var entry = WindowEntry{
             .window = window,
@@ -101,7 +101,8 @@ pub const Taskbar = struct {
                     property.atom != atoms.WM_NAME and
                     property.atom != atoms._NET_WM_ICON_NAME and
                     property.atom != atoms._NET_WM_DESKTOP and
-                    property.atom != atoms._NET_WM_STATE) return .{};
+                    property.atom != atoms._NET_WM_STATE and
+                    property.atom != atoms._ORCSOME_STATE) return .{};
                 return .{ .update = true };
             },
             .ButtonPress => |button| {
